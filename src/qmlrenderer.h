@@ -47,11 +47,12 @@ class QMLRENDERERSHARED_EXPORT QmlRenderer: public QObject
     Q_OBJECT
 
 public:
-    QmlRenderer(QObject *parent = 0);
-    ~QmlRenderer();
-
-    void renderQml(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool checkIfEntire=true, qint64 frameTime=0);
-    void renderSelectFrame(); //renders single frame
+    QmlRenderer(QObject *parent = nullptr);
+    ~QmlRenderer() override;
+    void test();
+    void initialiseRenderParams(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
+    void renderQml();
+    bool loadQML(const QString &qmlFile, const QSize &size);
     enum Status {
             NotRunning,
             Running
@@ -59,18 +60,17 @@ public:
 
 private:
     void cleanup();
-
     void createFbo();
     void destroyFbo();
-    bool loadQML(const QString &qmlFile, const QSize &size);
     void renderEntireQml();
     bool isRunning();
     bool event(QEvent *event) override;
-    int progress() const;
     void checkComponent();
     void renderFrames();
     void renderSingleFrame();
     void renderOneFrame();
+    void renderSelectFrame(); //renders single frame
+
     std::unique_ptr<QOpenGLContext> m_context;
     std::unique_ptr<QOffscreenSurface> m_offscreenSurface;
     std::unique_ptr<QQuickRenderControl> m_renderControl;
@@ -89,7 +89,6 @@ private:
     Status m_status;
     qint64 m_selectFrame;
 
-    int m_progress;
     int m_duration;  // by default = 5 seconds
     int m_fps; // by default = 24 fps
     int m_frames;
@@ -98,8 +97,10 @@ private:
     QString m_outputFormat;
     QString m_outputDirectory;
     QString m_outputFile;
+    QString m_qmlFile;
+
     qint64 m_frameTime;
-    bool m_checkIfEntire;
+    bool m_isSingleFrame;
 
 
     QVector<std::shared_ptr<QFutureWatcher<void>>> m_futures;
@@ -107,7 +108,6 @@ private:
 
 private slots:
     void futureFinished();
-
 
 };
 

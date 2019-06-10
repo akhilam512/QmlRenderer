@@ -1,12 +1,7 @@
-#-------------------------------------------------
-#
-# Project created by QtCreator 2019-05-27T14:43:39
-#
-#-------------------------------------------------
-
-QT       += widgets qml quick opengl testlib
+QT       += widgets qml quick opengl testlib concurrent
 
 QT       -= gui
+QT += testlib
 
 TARGET = QmlRenderer
 TEMPLATE = lib
@@ -26,12 +21,12 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
         qmlrenderer.cpp \
-    qmlanimationdriver.cpp
+        qmlanimationdriver.cpp \
 
 HEADERS += \
         qmlrenderer.h \
         qmlrenderer_global.h \ 
-    qmlanimationdriver.h
+        qmlanimationdriver.h \
 
 unix {
     target.path = /usr/lib

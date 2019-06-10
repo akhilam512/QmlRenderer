@@ -61,7 +61,7 @@ QmlRenderer::QmlRenderer(QObject *parent)
 
     m_renderControl = std::make_unique<QQuickRenderControl>(this);
     m_quickWindow = std::make_unique<QQuickWindow>(m_renderControl.get());
-    m_qmlEngine = std::make_unique<QQmlEngine>();
+    m_qmlEngine = std::make_unique<QQmlEngine>(new QQmlEngine);
 
     if (!m_qmlEngine->incubationController())
         m_qmlEngine->setIncubationController(m_quickWindow->incubationController());
@@ -70,12 +70,10 @@ QmlRenderer::QmlRenderer(QObject *parent)
     m_renderControl->initialize(m_context.get());
  }
 
-void QmlRenderer::renderQml(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps,  bool checkIfEntire, qint64 frameTime)
+
+void QmlRenderer::initialiseRenderParams(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
 {
-
-    if (m_status != NotRunning)
-        return;
-
+    m_qmlFile = qmlFile;
     m_size = size;
     m_dpr = devicePixelRatio;
     m_duration = durationMs;
@@ -83,9 +81,16 @@ void QmlRenderer::renderQml(const QString &qmlFile, const QString &filename, con
     m_outputName = filename;
     m_outputDirectory = outputDirectory;
     m_outputFormat = outputFormat;
+    m_isSingleFrame = isSingleFrame;
     m_frameTime = frameTime;
+}
 
-   if (!loadQML(qmlFile, size)) {
+void QmlRenderer::renderQml()
+{
+    if (m_status != NotRunning)
+        return;
+
+    if (!loadQML(m_qmlFile, m_size)) {
        return;
     }
 
@@ -95,17 +100,16 @@ void QmlRenderer::renderQml(const QString &qmlFile, const QString &filename, con
    if (!m_context->makeCurrent(m_offscreenSurface.get()))
        return;
 
-   // Render each frame of movie
    m_frames = m_duration / 1000 * m_fps;
    m_animationDriver = std::make_unique<QmlAnimationDriver>(1000/m_fps);
    m_animationDriver->install();
    m_currentFrame = 0;
    m_futureCounter = 0;
-    m_checkIfEntire = checkIfEntire;
 
-   if(checkIfEntire== true) // render entire qml frames
-        renderEntireQml();
-   else {                               // render only select frame
+   if (m_isSingleFrame== false){
+       renderEntireQml();
+   }
+   else {
        m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
        renderSingleFrame();
    }
@@ -115,11 +119,6 @@ QmlRenderer::~QmlRenderer()
 {
     m_context->makeCurrent(m_offscreenSurface.get());
     m_context->doneCurrent();
-}
-
-int QmlRenderer::progress() const
-{
-    return m_progress;
 }
 
 void QmlRenderer::cleanup()
@@ -198,7 +197,6 @@ void QmlRenderer::futureFinished()
 
 void QmlRenderer::renderEntireQml()
 {
-
     // Render frame
     m_renderControl->polishItems();
     m_renderControl->sync();
@@ -213,13 +211,11 @@ void QmlRenderer::renderEntireQml()
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
     watcher->setFuture(QtConcurrent::run(saveImage, m_fbo->toImage(), m_outputFile));
     m_futures.append((std::move(watcher)));
-
-    //advance animation
+    //Advance animation
     m_animationDriver->advance();
 
     if (m_currentFrame < m_frames) {
         //Schedule the next update
-        qDebug() << "ok1";
         QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
     } else {
         //Finished
@@ -230,15 +226,12 @@ void QmlRenderer::renderEntireQml()
 bool QmlRenderer::event(QEvent *event)
 {
     if (event->type() == QEvent::UpdateRequest) {
-        if(m_checkIfEntire) {
+        if(m_isSingleFrame==false) {
             renderEntireQml();
-            qDebug() << "ok2";
-            //qDebug() << "up in event() => " << updateRequest.get();
             return true;
         }
         else {
-            renderSingleFrame(); //change this when you use other render functions (renderSelectFrame(), renderOneFrame())
-            qDebug() << "okkk10-";
+            renderSingleFrame();   //do not forget to change this when you test other  render functions (renderSelectFrame(), renderOneFrame())
             return true;
 
         }
@@ -254,12 +247,9 @@ bool QmlRenderer::isRunning()
 void QmlRenderer::renderOneFrame() // advance animation using advance() repeatedly
 {
     while(m_animationDriver->elapsed() < m_frameTime) {
-        qDebug() << "ok "  << m_animationDriver->elapsed();
-
         m_animationDriver->advance();
         QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
     }
-    qDebug() << "ok2";
 
     m_renderControl->polishItems();
     m_renderControl->sync();
@@ -270,13 +260,10 @@ void QmlRenderer::renderOneFrame() // advance animation using advance() repeated
     m_currentFrame =static_cast<int>(m_frameTime / ((1000/m_fps)));
     m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
 
-    qDebug() << "you are seeking frame " << m_currentFrame;
     saveImage(m_fbo->toImage(), m_outputFile);
 
     cleanup();
     m_status = NotRunning;
-    qDebug() << "ok3";
-
 }
 void QmlRenderer::renderSelectFrame() // advance animation till required frame
 {
@@ -292,18 +279,15 @@ void QmlRenderer::renderSelectFrame() // advance animation till required frame
     m_currentFrame =static_cast<int>(m_frameTime / ((1000/m_fps)));
     m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
 
-    qDebug() << "you are seeking frame " << m_currentFrame;
     saveImage(m_fbo->toImage(), m_outputFile);
 
     cleanup();
     m_status = NotRunning;
 }
 
-void QmlRenderer::renderSingleFrame()  // render frames without saving frames till required frame
+void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames without saving frames till the required frame is reached
 {
     // Render frame
-    qDebug() << "yay";
-
     m_renderControl->polishItems();
     m_renderControl->sync();
     m_renderControl->render();
@@ -316,9 +300,7 @@ void QmlRenderer::renderSingleFrame()  // render frames without saving frames ti
 
     watcher = std::make_unique<QFutureWatcher<void>>();
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
-    qDebug() << m_currentFrame << " and " << m_selectFrame;
     if(m_currentFrame ==  m_selectFrame) {
-        qDebug() << "yaaay";
         watcher->setFuture(QtConcurrent::run(saveImage, m_fbo->toImage(), m_outputFile));
         return;
     }

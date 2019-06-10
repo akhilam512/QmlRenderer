@@ -41,18 +41,14 @@ qint64 QmlAnimationDriver::elapsed() const
     return m_elapsed;
 }
 
-void QmlAnimationDriver::advance(qint64 msFrameTime)
+void QmlAnimationDriver::advance(qint64 msFrameTime) // NOT IN USE : approach not working
 {
     if(QmlAnimationDriver::isRunning()) {
         qDebug() << "QmlAnimationDriver already running";
         return;
     }
-
-    //qDebug() << "elapsed  ===== " << elapsed() ;
     m_elapsed = 0;
-
     while(m_elapsed < msFrameTime) {
-        qDebug() << "elapsed=" << m_elapsed ;
         QmlAnimationDriver::advance();
     }
 }
