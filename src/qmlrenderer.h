@@ -29,14 +29,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <QSize>
 #include <QString>
 #include <QDir>
+#include <QQmlEngine>
+#include <QQmlError>
 #include <QFuture>
+#include <QQuickWindow>
 
 class QOpenGLContext;
 class QOpenGLFramebufferObject;
 class QOffscreenSurface;
 class QQuickRenderControl;
-class QQuickWindow;
-class QQmlEngine;
 class QQmlComponent;
 class QQuickItem;
 class QmlAnimationDriver;
@@ -49,7 +50,6 @@ class QMLRENDERERSHARED_EXPORT QmlRenderer: public QObject
 public:
     QmlRenderer(QObject *parent = nullptr);
     ~QmlRenderer() override;
-    void test();
     void initialiseRenderParams(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
     void renderQml();
     bool loadQML(const QString &qmlFile, const QSize &size);
@@ -71,6 +71,7 @@ private:
     void renderOneFrame();
     void renderSelectFrame(); //renders single frame
 
+
     std::unique_ptr<QOpenGLContext> m_context;
     std::unique_ptr<QOffscreenSurface> m_offscreenSurface;
     std::unique_ptr<QQuickRenderControl> m_renderControl;
@@ -80,7 +81,7 @@ private:
     std::unique_ptr<QQuickItem> m_rootItem;
     std::unique_ptr<QOpenGLFramebufferObject> m_fbo;
     std::unique_ptr<QmlAnimationDriver> m_animationDriver;
-    std::unique_ptr<QObject> rootObject;
+    std::unique_ptr<QObject> m_rootObject;
     std::unique_ptr<QFutureWatcher<void>> watcher;
     QScopedPointer<QEvent> updateRequest;
 
@@ -108,6 +109,8 @@ private:
 
 private slots:
     void futureFinished();
+    void displayQmlError(QList<QQmlError> warnings);
+    void displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message);
 
 };
 

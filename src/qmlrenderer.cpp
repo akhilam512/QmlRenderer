@@ -28,16 +28,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <QOpenGLVertexArrayObject>
 #include <QOffscreenSurface>
 #include <QScreen>
-#include <QQmlEngine>
 #include <QQmlComponent>
 #include <QQuickItem>
-#include <QQuickWindow>
 #include <QQuickRenderControl>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QtConcurrent/QtConcurrent>
 #include <memory>
 #include <QDebug>
+#include <QQmlEngine>
 
 #include "qmlrenderer.h"
 #include "qmlanimationdriver.h"
@@ -53,23 +52,45 @@ QmlRenderer::QmlRenderer(QObject *parent)
 
     m_context = std::make_unique<QOpenGLContext>();
     m_context->setFormat(format);
+    Q_ASSERT(format.depthBufferSize() == (m_context->format()).depthBufferSize());
+    Q_ASSERT(format.stencilBufferSize() == (m_context->format()).stencilBufferSize());
     m_context->create();
+    Q_ASSERT(m_context->isValid());
 
     m_offscreenSurface = std::make_unique<QOffscreenSurface>();
     m_offscreenSurface->setFormat(m_context->format());
     m_offscreenSurface->create();
+    Q_ASSERT(m_offscreenSurface->isValid());
 
     m_renderControl = std::make_unique<QQuickRenderControl>(this);
+    Q_ASSERT(m_renderControl != nullptr);
     m_quickWindow = std::make_unique<QQuickWindow>(m_renderControl.get());
-    m_qmlEngine = std::make_unique<QQmlEngine>(new QQmlEngine);
+    Q_ASSERT(m_quickWindow != nullptr);
 
-    if (!m_qmlEngine->incubationController())
+    m_qmlEngine = std::make_unique<QQmlEngine>();
+    if (!m_qmlEngine->incubationController()) {
         m_qmlEngine->setIncubationController(m_quickWindow->incubationController());
+    }
 
     m_context->makeCurrent(m_offscreenSurface.get());
+    Q_ASSERT(m_context->currentContext()!= nullptr);
     m_renderControl->initialize(m_context.get());
- }
 
+    connect(m_quickWindow.get(), SIGNAL(sceneGraphError(QQuickWindow::SceneGraphError, const QString)), this, SLOT(displaySceneGraphError(QQuickWindow::SceneGraphError, const QString)));
+    connect(m_qmlEngine.get(), SIGNAL(warnings(QList<QQmlError>)), this, SLOT(displayQmlError(QList<QQmlError>)));
+}
+
+void QmlRenderer::displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message)
+{
+    qDebug() << "ERROR : QML Scene Graph " << error << message;
+}
+
+void QmlRenderer::displayQmlError(QList<QQmlError> warnings)
+{
+    foreach(const QQmlError& warning, warnings) {
+        qDebug() << "QML ERROR: "  << warning;
+    }
+}
 
 void QmlRenderer::initialiseRenderParams(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
 {
@@ -100,9 +121,10 @@ void QmlRenderer::renderQml()
    if (!m_context->makeCurrent(m_offscreenSurface.get()))
        return;
 
-   m_frames = m_duration / 1000 * m_fps;
+   m_frames = (m_duration / 1000 )* m_fps;
    m_animationDriver = std::make_unique<QmlAnimationDriver>(1000/m_fps);
    m_animationDriver->install();
+   Q_ASSERT(!m_animationDriver->isRunning());
    m_currentFrame = 0;
    m_futureCounter = 0;
 
@@ -131,7 +153,9 @@ void QmlRenderer::cleanup()
 void QmlRenderer::createFbo()
 {
     m_fbo = std::make_unique<QOpenGLFramebufferObject>(m_size * m_dpr, QOpenGLFramebufferObject::CombinedDepthStencil);
+    Q_ASSERT(m_fbo != nullptr);
     m_quickWindow->setRenderTarget(m_fbo.get());
+    Q_ASSERT(m_quickWindow->renderTarget() != 0 && m_quickWindow != nullptr);
 }
 
 void QmlRenderer::destroyFbo()
@@ -153,31 +177,31 @@ bool QmlRenderer::loadQML(const QString &qmlFile, const QSize &size)
     if (m_qmlComponent != nullptr) {
         m_qmlComponent.reset();
     }
+
     m_qmlComponent = std::make_unique<QQmlComponent>(m_qmlEngine.get(), QUrl(qmlFile), QQmlComponent::PreferSynchronous);
+    Q_ASSERT(!m_qmlComponent->isNull() || m_qmlComponent->isReady());
+    checkComponent();
+
+    QQmlEngine::setObjectOwnership(m_rootObject.get(), QQmlEngine::CppOwnership);
+    m_rootObject.reset(m_qmlComponent->create());
+    Q_ASSERT(m_rootObject);
 
     checkComponent();
 
-    QQmlEngine::setObjectOwnership(rootObject.get(), QQmlEngine::CppOwnership);
-    rootObject.reset(m_qmlComponent->create());
-
-    checkComponent();
-
-    m_rootItem.reset(qobject_cast<QQuickItem*>(rootObject.get()));
+    m_rootItem.reset(qobject_cast<QQuickItem*>(m_rootObject.get()));
 
     if (!m_rootItem) {
-        qDebug()<< "run: Not a QQuickItem";
-        rootObject.reset();
+        qDebug()<< "ERROR - run: Not a QQuickItem - QML file INVALID ";
+        m_rootObject.reset();
         return false;
     }
 
     // The root item is ready. Associate it with the window.
     m_rootItem->setParentItem(m_quickWindow->contentItem());
-
     m_rootItem->setWidth(size.width());
     m_rootItem->setHeight(size.height());
 
     m_quickWindow->setGeometry(0, 0, size.width(), size.height());
-
     return true;
 }
 
@@ -204,15 +228,18 @@ void QmlRenderer::renderEntireQml()
 
     m_context->functions()->glFlush();
 
-     m_currentFrame++;
-     m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
+    m_currentFrame++;
+    m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
 
     watcher = std::make_unique<QFutureWatcher<void>>();
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
     watcher->setFuture(QtConcurrent::run(saveImage, m_fbo->toImage(), m_outputFile));
     m_futures.append((std::move(watcher)));
+    Q_ASSERT(m_futures.back()->isRunning()); // make sure the last future is running
+
     //Advance animation
     m_animationDriver->advance();
+    Q_ASSERT(m_animationDriver->isRunning());
 
     if (m_currentFrame < m_frames) {
         //Schedule the next update
