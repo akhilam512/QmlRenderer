@@ -48,18 +48,26 @@ class QMLRENDERERSHARED_EXPORT QmlRenderer: public QObject
     Q_OBJECT
 
 public:
-    QmlRenderer(QObject *parent = nullptr);
+    explicit QmlRenderer(QObject *parent = nullptr);
     ~QmlRenderer() override;
     void initialiseRenderParams(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
+    void cleanup();
     void renderQml();
     bool loadQML(const QString &qmlFile, const QSize &size);
     enum Status {
             NotRunning,
+            Initialised,
             Running
         };
-
+    int getStatus();
+    int getCurrentFrame();
+    int getActualFrames();
+    int getFutureCount();
+    bool getSceneGraphStatus();
+    bool getAnimationDriverStatus();
+    bool getfboStatus();
+    void getAllParams();
 private:
-    void cleanup();
     void createFbo();
     void destroyFbo();
     void renderEntireQml();
@@ -106,6 +114,9 @@ private:
 
     QVector<std::shared_ptr<QFutureWatcher<void>>> m_futures;
     int m_futureCounter;
+
+signals:
+    void finished();
 
 private slots:
     void futureFinished();
