@@ -1,0 +1,1 @@
+./test_cli /home/akhilam512/render_examples/test2.qml,output,/home/akhilam512/otuput,jpg,1280, 720, 1, 1000, 25, false, 800
