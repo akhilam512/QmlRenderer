@@ -1,0 +1,11 @@
+TEMPLATE = app
+INCLUDEPATH += ../src
+DEPENDSPATH += ../src
+DESTDIR = ../bin
+win32: LIBS += -L../bin
+else: LIBS += -L../lib
+LIBS += -lQmlRenderer
+TARGET = QmlRender
+QT = core qml quick widgets
+SOURCES += main.cpp qmlrender.cpp
+HEADERS += qmlrender.h

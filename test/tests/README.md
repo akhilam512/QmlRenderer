@@ -1,1 +1,0 @@
-This directory is supposed to contain unit tests for root/QmlRenderer/src
