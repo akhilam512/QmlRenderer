@@ -155,12 +155,31 @@ void QmlRenderer::getAllParams()
 }
 
 
-void QmlRenderer::initialiseRenderParams(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
+void QmlRenderer::initialiseRenderParams(const QString &qmlText, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
 {
-    if (m_status == Running) {
-        return;
+    m_qmlFile = qmlText;
+    m_size = size;
+    m_dpr = devicePixelRatio;
+    m_duration = durationMs;
+    m_fps = fps;
+    m_outputName = filename;
+    m_outputDirectory = outputDirectory;
+    m_outputFormat = outputFormat;
+    m_isSingleFrame = isSingleFrame;
+    m_frameTime = frameTime;
+
+    if(isSingleFrame) {
+        m_frames = 1;
+    }
+    else {
+        m_frames = (m_duration / 1000 )* m_fps;
     }
 
+}
+
+
+void QmlRenderer::initialiseRenderParams(const QUrl &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
+{
     m_qmlFile = qmlFile;
     m_size = size;
     m_dpr = devicePixelRatio;
@@ -171,6 +190,7 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlFile, const QString &
     m_outputFormat = outputFormat;
     m_isSingleFrame = isSingleFrame;
     m_frameTime = frameTime;
+
     if(isSingleFrame) {
         m_frames = 1;
     }
@@ -178,14 +198,21 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlFile, const QString &
         m_frames = (m_duration / 1000 )* m_fps;
     }
 
-    if (!loadQML(m_qmlFile, m_size)) {
+}
+
+void QmlRenderer::prepareRenderer() 
+{
+    if (m_status == Running) {
+        return;
+    }
+    
+    if (!loadComponent(m_qmlFile)) {
        return;
     }
 
     createFbo();
 
     if (!m_context->makeCurrent(m_offscreenSurface.get())) {
-        qDebug() << "in";
         return;
     }
 
@@ -194,11 +221,8 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlFile, const QString &
 
     m_animationDriver = std::make_unique<QmlAnimationDriver>(1000/m_fps);
     m_animationDriver->install();
-    qDebug() << "animation driver === "<< m_animationDriver->isRunning() << "THIS IS CALLED OKAYY";
     Q_ASSERT(!m_animationDriver->isRunning());
-
     m_status = Initialised;
-    qDebug() << m_status;
 }
 
 void QmlRenderer::renderQml()
@@ -244,15 +268,41 @@ void QmlRenderer::checkComponent()
     }
 }
 
-bool QmlRenderer::loadQML(const QString &qmlFile, const QSize &size)
+bool QmlRenderer::loadComponent(const QUrl &qmlFileUrl)
 {
     if (m_qmlComponent != nullptr) {
         m_qmlComponent.reset();
     }
 
-    m_qmlComponent = std::make_unique<QQmlComponent>(m_qmlEngine.get(), QUrl(qmlFile), QQmlComponent::PreferSynchronous);
+    m_qmlComponent = std::make_unique<QQmlComponent>(m_qmlEngine.get(), QUrl(qmlFileUrl), QQmlComponent::PreferSynchronous);
     Q_ASSERT(!m_qmlComponent->isNull() || m_qmlComponent->isReady());
 
+    if(!loadQML()) {
+        return false;
+    }
+
+    return true;
+}
+
+bool QmlRenderer::loadComponent(const QString &qmlFileText)
+{
+    if (m_qmlComponent != nullptr) {
+        m_qmlComponent.reset();
+    }
+
+    m_qmlComponent = std::make_unique<QQmlComponent>(m_qmlEngine.get(), qmlFileText, QQmlComponent::PreferSynchronous);
+    Q_ASSERT(!m_qmlComponent->isNull() || m_qmlComponent->isReady());
+
+
+    if(!loadQML()) {
+        return false;
+    }
+
+    return true;
+}
+
+bool QmlRenderer::loadQML()
+{
     checkComponent();
     QQmlEngine::setObjectOwnership(m_rootObject.get(), QQmlEngine::CppOwnership);
     m_rootObject.reset(m_qmlComponent->create());
@@ -269,10 +319,10 @@ bool QmlRenderer::loadQML(const QString &qmlFile, const QSize &size)
 
     // The root item is ready. Associate it with the window.
     m_rootItem->setParentItem(m_quickWindow->contentItem());
-    m_rootItem->setWidth(size.width());
-    m_rootItem->setHeight(size.height());
+    m_rootItem->setWidth(m_size.width());
+    m_rootItem->setHeight(m_size.height());
 
-    m_quickWindow->setGeometry(0, 0, size.width(), size.height());
+    m_quickWindow->setGeometry(0, 0, m_size.width(), m_size.height());
     return true;
 }
 
@@ -286,6 +336,7 @@ void QmlRenderer::futureFinished()
     m_futureCounter++;
     if (m_futureCounter == (m_frames - 1)) {
         m_status = NotRunning;
+        emit finished();
     }
 }
 
@@ -339,47 +390,6 @@ bool QmlRenderer::event(QEvent *event)
 bool QmlRenderer::isRunning()
 {
     return m_status == Running;
-}
-
-void QmlRenderer::renderOneFrame() // advance animation using advance() repeatedly
-{
-    while(m_animationDriver->elapsed() < m_frameTime) {
-        m_animationDriver->advance();
-        QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
-    }
-
-    m_renderControl->polishItems();
-    m_renderControl->sync();
-    m_renderControl->render();
-
-    m_context->functions()->glFlush();
-
-    m_currentFrame =static_cast<int>(m_frameTime / ((1000/m_fps)));
-    m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
-
-    saveImage(m_fbo->toImage(), m_outputFile);
-
-    cleanup();
-    m_status = NotRunning;
-}
-void QmlRenderer::renderSelectFrame() // advance animation till required frame
-{
-    m_animationDriver->advance(m_frameTime);
-    QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
-    // Render frame
-    m_renderControl->polishItems();
-    m_renderControl->sync();
-    m_renderControl->render();
-
-    m_context->functions()->glFlush();
-
-    m_currentFrame =static_cast<int>(m_frameTime / ((1000/m_fps)));
-    m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
-
-    saveImage(m_fbo->toImage(), m_outputFile);
-
-    cleanup();
-    m_status = NotRunning;
 }
 
 void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames without saving frames till the required frame is reached

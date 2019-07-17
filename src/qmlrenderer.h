@@ -50,10 +50,13 @@ class QMLRENDERERSHARED_EXPORT QmlRenderer: public QObject
 public:
     explicit QmlRenderer(QObject *parent = nullptr);
     ~QmlRenderer() override;
-    void initialiseRenderParams(const QString &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
+    void initialiseRenderParams(const QString &qmlFile, const QString &outputDirectory,  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
+    void initialiseRenderParams(const QUrl &qmlFile, const QString &outputDirectory,  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
+    void prepareRenderer();
     void cleanup();
     void renderQml();
-    bool loadQML(const QString &qmlFile, const QSize &size);
+    bool loadComponent(const QUrl &qmlFileUrl);
+    bool loadComponent(const QString &qmlFileText); // over loaded - used for MLT QML producer
     enum Status {
             NotRunning,
             Initialised,
@@ -78,6 +81,8 @@ private:
     void renderSingleFrame();
     void renderOneFrame();
     void renderSelectFrame(); //renders single frame
+    bool loadQML();
+
 
 
     std::unique_ptr<QOpenGLContext> m_context;
@@ -106,7 +111,8 @@ private:
     QString m_outputFormat;
     QString m_outputDirectory;
     QString m_outputFile;
-    QString m_qmlFile;
+    QString m_qmlText;
+    QUrl m_qmlFile;
 
     qint64 m_frameTime;
     bool m_isSingleFrame;

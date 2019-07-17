@@ -84,7 +84,8 @@ int main(int argc, char *argv[])
     bool ifSingleFrame = parser.value(singleframe)=="true"? true:false ;
 
     QmlRender w;
-    w.renderer->initialiseRenderParams(parser.value(file), outputName, parser.value(odir), parser.value(format), frameSize, parser.value(devicePRatio).toLongLong(), parser.value(duration).toInt(), parser.value(fps).toInt(), ifSingleFrame , parser.value(frametime).toLongLong());
+    w.renderer->initialiseRenderParams(QUrl(parser.value(file)), parser.value(odir), outputName, parser.value(format), frameSize, parser.value(devicePRatio).toLongLong(), parser.value(duration).toInt(), parser.value(fps).toInt(), ifSingleFrame , parser.value(frametime).toLongLong());
+    w.renderer->prepareRenderer();
     w.renderer->renderQml();
     return app.exec();
 }
