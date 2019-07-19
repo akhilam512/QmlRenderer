@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
     singleframe.setDefaultValue("false");
     parser.addOption(singleframe);
 
-    QCommandLineOption  frametime(QStringList() << "t" << "frametime", QCoreApplication::translate("main", "If single frame = true, set frame time" ), "frameTime");
+    QCommandLineOption  frametime(QStringList() << "t" << "frametime", QCoreApplication::translate("main", "If single frame = true, set which frame, i.e. frame time" ), "frameTime");
     frametime.setDefaultValue("1000");
     parser.addOption(frametime);
 
