@@ -50,40 +50,50 @@ class QMLRENDERERSHARED_EXPORT QmlRenderer: public QObject
 public:
     explicit QmlRenderer(QObject *parent = nullptr);
     ~QmlRenderer() override;
-    void initialiseRenderParams(const QString &qmlFile, const QString &outputDirectory,  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
-    void initialiseRenderParams(const QUrl &qmlFile, const QString &outputDirectory,  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
-    void prepareRenderer();
-    void cleanup();
-    void renderQml();
-    bool loadComponent(const QUrl &qmlFileUrl);
-    bool loadComponent(const QString &qmlFileText); // over loaded - used for MLT QML producer
     enum Status {
             NotRunning,
             Initialised,
             Running
         };
+
+    void initialiseRenderParams(const QString &qmlFile, const QString &outputDirectory = "",  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
+    void initialiseRenderParams(const QUrl &qmlFile, const QString &outputDirectory,  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
+    void prepareRenderer();
+    void cleanup();
+    void renderQml();
+    void getAllParams();
+    void setFrame(const QImage &frame);
+    bool loadComponent(const QUrl &qmlFileUrl);
+    bool loadComponent(const QString &qmlFileText); // over loaded - used for MLT QML producer
+    bool getSceneGraphStatus();
+    bool getAnimationDriverStatus();
+    bool getfboStatus();
     int getStatus();
     int getCurrentFrame();
     int getActualFrames();
     int getFutureCount();
-    bool getSceneGraphStatus();
-    bool getAnimationDriverStatus();
-    bool getfboStatus();
-    void getAllParams();
+    void renderSingleFrame();
+
+    static QImage getFrame()
+    {
+        return m_frame;
+    }
+
+    static void saveImage(const QImage &image, const QString &outputFile)
+    {
+        image.save(outputFile);
+        //m_frame = image;
+    }
+
 private:
     void createFbo();
     void destroyFbo();
     void renderEntireQml();
-    bool isRunning();
-    bool event(QEvent *event) override;
     void checkComponent();
     void renderFrames();
-    void renderSingleFrame();
-    void renderOneFrame();
-    void renderSelectFrame(); //renders single frame
     bool loadQML();
-
-
+    bool isRunning();
+    bool event(QEvent *event) override;
 
     std::unique_ptr<QOpenGLContext> m_context;
     std::unique_ptr<QOffscreenSurface> m_offscreenSurface;
@@ -97,6 +107,7 @@ private:
     std::unique_ptr<QObject> m_rootObject;
     std::unique_ptr<QFutureWatcher<void>> watcher;
     QScopedPointer<QEvent> updateRequest;
+    QVector<std::shared_ptr<QFutureWatcher<void>>> m_futures;
 
     qreal m_dpr;
     QSize m_size;
@@ -107,27 +118,26 @@ private:
     int m_fps; // by default = 24 fps
     int m_frames;
     int m_currentFrame;
+    int m_futureCounter;
     QString m_outputName;
     QString m_outputFormat;
     QString m_outputDirectory;
     QString m_outputFile;
-    QString m_qmlText;
-    QUrl m_qmlFile;
-
+    QString m_qmlFileText;
+    QUrl m_qmlFileUrl;
+    static QImage m_frame;
     qint64 m_frameTime;
     bool m_isSingleFrame;
 
-
-    QVector<std::shared_ptr<QFutureWatcher<void>>> m_futures;
-    int m_futureCounter;
-
 signals:
     void finished();
+    void terminate();
 
 private slots:
     void futureFinished();
     void displayQmlError(QList<QQmlError> warnings);
     void displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message);
+    void slotTerminate();
 
 };
 

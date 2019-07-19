@@ -79,12 +79,20 @@ QmlRenderer::QmlRenderer(QObject *parent)
 
     connect(m_quickWindow.get(), SIGNAL(sceneGraphError(QQuickWindow::SceneGraphError, const QString)), this, SLOT(displaySceneGraphError(QQuickWindow::SceneGraphError, const QString)));
     connect(m_qmlEngine.get(), SIGNAL(warnings(QList<QQmlError>)), this, SLOT(displayQmlError(QList<QQmlError>)));
+    connect(this, SIGNAL(terminate()), this, SLOT(slotTerminate()));
 }
 
 QmlRenderer::~QmlRenderer()
 {
     m_context->makeCurrent(m_offscreenSurface.get());
     m_context->doneCurrent();
+}
+
+QImage QmlRenderer::m_frame = QImage();
+
+void QmlRenderer::slotTerminate()
+{
+    exit(0);
 }
 
 void QmlRenderer::displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message)
@@ -147,9 +155,9 @@ int QmlRenderer::getFutureCount()
 void QmlRenderer::getAllParams()
 {
     qDebug() << "frames" << m_fps;
-    qDebug() << "file" << m_qmlFile;
+    qDebug() << "file" << m_qmlFileText <<" : " << m_qmlFileUrl;
     qDebug() << "odir" << m_outputDirectory;
-    qDebug() << "filename" << m_outputName;
+    qDebug() << "output dir" << m_outputName;
     qDebug() << "format" << m_outputFormat;
     qDebug() << "durration" << m_duration;
 }
@@ -157,7 +165,7 @@ void QmlRenderer::getAllParams()
 
 void QmlRenderer::initialiseRenderParams(const QString &qmlText, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
 {
-    m_qmlFile = qmlText;
+    m_qmlFileText = qmlText;
     m_size = size;
     m_dpr = devicePixelRatio;
     m_duration = durationMs;
@@ -175,12 +183,15 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlText, const QString &
         m_frames = (m_duration / 1000 )* m_fps;
     }
 
+    if (!loadComponent(m_qmlFileText)) {
+       return;
+    }
 }
 
 
-void QmlRenderer::initialiseRenderParams(const QUrl &qmlFile, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
+void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
 {
-    m_qmlFile = qmlFile;
+    m_qmlFileUrl = qmlFileUrl;
     m_size = size;
     m_dpr = devicePixelRatio;
     m_duration = durationMs;
@@ -198,16 +209,15 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFile, const QString &fil
         m_frames = (m_duration / 1000 )* m_fps;
     }
 
+    if (!loadComponent(m_qmlFileUrl)) {
+       return;
+    }
 }
 
 void QmlRenderer::prepareRenderer() 
 {
     if (m_status == Running) {
         return;
-    }
-    
-    if (!loadComponent(m_qmlFile)) {
-       return;
     }
 
     createFbo();
@@ -326,17 +336,12 @@ bool QmlRenderer::loadQML()
     return true;
 }
 
-void static saveImage(const QImage &image, const QString &outputFile)
-{
-    image.save(outputFile);
-}
-
 void QmlRenderer::futureFinished()
 {
     m_futureCounter++;
     if (m_futureCounter == (m_frames - 1)) {
         m_status = NotRunning;
-        emit finished();
+        emit terminate();
     }
 }
 
@@ -356,7 +361,7 @@ void QmlRenderer::renderEntireQml()
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
     watcher->setFuture(QtConcurrent::run(saveImage, m_fbo->toImage(), m_outputFile));
     m_futures.append((std::move(watcher)));
-    Q_ASSERT(m_futures.back()->isRunning()); // make sure the last future is running
+    //Q_ASSERT(m_futures.back()->isRunning()); // make sure the last future is running
 
     //Advance animation
     m_animationDriver->advance();

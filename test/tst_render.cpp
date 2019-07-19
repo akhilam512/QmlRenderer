@@ -19,6 +19,7 @@ void Render::test_case1()  // base initialisation test
     QmlRenderer *m_renderer = new QmlRenderer(this);
     QDir rootPath = QDir::currentPath();
     m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), "test_output", QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "jpg", QSize(1280,720), 1, 1000, 25);
+    m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
     QVERIFY2(m_renderer->getActualFrames()!=0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus()!=false, "SCENE GRAPH ERROR: Scene graph not initialised");
@@ -32,6 +33,7 @@ void Render::test_case2() // QmlRenderer::renderEntireQml() test
     QmlRenderer *m_renderer = new QmlRenderer(this);
     QDir rootPath = QDir::currentPath();
     m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), "test_output", QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "jpg", QSize(1280,720), 1, 1000, 25);
+    m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
     QVERIFY2(m_renderer->getActualFrames() != 0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus() != false, "SCENE GRAPH ERROR: Scene graph not initialised");
@@ -51,6 +53,7 @@ void Render::test_case3() // QmlRenderer::renderSingleFrame() test
 
     QDir rootPath = QDir::currentPath();
     m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), "test_output", QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "jpg", QSize(1280,720), 1, 1000, 25, true, 80);
+    m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
     QVERIFY2(m_renderer->getActualFrames()!=0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus()!=false, "SCENE GRAPH ERROR: Scene graph not initialised");
@@ -68,7 +71,7 @@ void Render::test_case4()  // QmlRenderer::cleanup() test
 
     QDir rootPath = QDir::currentPath();
     m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), "test_output", QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "jpg", QSize(1280,720), 1, 1000, 25);
-
+    m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
     QVERIFY2(m_renderer->getActualFrames() != 0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus() != false, "SCENE GRAPH ERROR: Scene graph not initialised");
@@ -88,7 +91,7 @@ void Render::test_case5() // Integration test - QmlRenderer::renderEntireQml()
     QmlRenderer *m_renderer = new QmlRenderer(this);
     QDir rootPath = QDir::currentPath();
     m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), "output", QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "jpg", QSize(1280,720), 1, 1000, 25);
-
+    m_renderer->prepareRenderer();
     m_renderer->renderQml();
     QTest::qWait(2000); // quick fix (futures still running in rendering)
     QImage orig_frame;
@@ -112,6 +115,7 @@ void Render::test_case6() // integration test : QmlRenderer::renderSingleFrame()
     QmlRenderer *m_renderer = new QmlRenderer(this);
     QDir rootPath = QDir::currentPath();
     m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), "output", QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "jpg", QSize(1280,720), 1, 1000, 25, true, 800); // 800ms means 20th frame for 25 fps and 1000ms duration
+    m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
     QVERIFY2(m_renderer->getActualFrames()!=0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus()!=false, "SCENE GRAPH ERROR: Scene graph not initialised");
