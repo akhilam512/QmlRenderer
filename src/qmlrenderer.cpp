@@ -92,6 +92,7 @@ QImage QmlRenderer::m_frame = QImage();
 
 void QmlRenderer::slotTerminate()
 {
+    cleanup();
     exit(0);
 }
 
@@ -202,12 +203,14 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, const QString &
     m_isSingleFrame = isSingleFrame;
     m_frameTime = frameTime;
 
-    if(isSingleFrame) {
+    /*if(isSingleFrame) {
         m_frames = 1;
     }
     else {
         m_frames = (m_duration / 1000 )* m_fps;
-    }
+    }*/
+
+    m_frames = (m_duration / 1000 )* m_fps;
 
     if (!loadComponent(m_qmlFileUrl)) {
        return;
@@ -239,12 +242,12 @@ void QmlRenderer::renderQml()
 {
     m_status = Running;
 
-   if (m_isSingleFrame == false){
-       renderEntireQml();
+   if (m_isSingleFrame == true){
+        m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
+        renderSingleFrame();
    }
    else {
-       m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
-       renderSingleFrame();
+        renderEntireQml();
    }
 }
 
@@ -343,6 +346,10 @@ void QmlRenderer::futureFinished()
         m_status = NotRunning;
         emit terminate();
     }
+    else if(m_isSingleFrame) { // if single frame, it is guaranteed that this will get called exactly once
+        m_status = NotRunning;
+        emit terminate();
+    }
 }
 
 void QmlRenderer::renderEntireQml()
@@ -371,22 +378,18 @@ void QmlRenderer::renderEntireQml()
         //Schedule the next update
         QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
     }
-    else{
-        cleanup();
-    }
 }
 
 bool QmlRenderer::event(QEvent *event)
 {
     if (event->type() == QEvent::UpdateRequest) {
-        if(m_isSingleFrame == false) {
-            renderEntireQml();
+        if(m_isSingleFrame == true) {
+            renderSingleFrame();
             return true;
         }
         else {
-            renderSingleFrame();   //do not forget to change this when you test other  render functions (renderSelectFrame(), renderOneFrame())
+            renderEntireQml();
             return true;
-
         }
     }
     return QObject::event(event);
@@ -406,9 +409,9 @@ void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames with
 
     m_context->functions()->glFlush();
 
-     m_currentFrame++;
+    m_currentFrame++;
 
-     m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
+    m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
 
     watcher = std::make_unique<QFutureWatcher<void>>();
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
@@ -423,10 +426,6 @@ void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames with
 
     if (m_currentFrame < m_frames) {
         //Schedule the next update
-       QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
-    } else {
-        //Finished
-        cleanup();
+        QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
     }
-
 }
