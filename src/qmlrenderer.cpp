@@ -164,9 +164,9 @@ void QmlRenderer::getAllParams()
 }
 
 
-void QmlRenderer::initialiseRenderParams(const QString &qmlText, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
+void QmlRenderer::initialiseRenderParams(const QString &qmlFileText, bool isSingleFrame, qint64 frameTime, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps)
 {
-    m_qmlFileText = qmlText;
+    m_qmlFileText = qmlFileText;
     m_size = size;
     m_dpr = devicePixelRatio;
     m_duration = durationMs;
@@ -178,10 +178,7 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlText, const QString &
     m_frameTime = frameTime;
 
     if(isSingleFrame) {
-        m_frames = 1;
-    }
-    else {
-        m_frames = (m_duration / 1000 )* m_fps;
+        m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
     }
 
     if (!loadComponent(m_qmlFileText)) {
@@ -190,7 +187,7 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlText, const QString &
 }
 
 
-void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps, bool isSingleFrame, qint64 frameTime)
+void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame, qint64 frameTime, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps)
 {
     m_qmlFileUrl = qmlFileUrl;
     m_size = size;
@@ -203,12 +200,9 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, const QString &
     m_isSingleFrame = isSingleFrame;
     m_frameTime = frameTime;
 
-    /*if(isSingleFrame) {
-        m_frames = 1;
+    if(isSingleFrame) {
+        m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
     }
-    else {
-        m_frames = (m_duration / 1000 )* m_fps;
-    }*/
 
     m_frames = (m_duration / 1000 )* m_fps;
 
@@ -243,7 +237,6 @@ void QmlRenderer::renderQml()
     m_status = Running;
 
    if (m_isSingleFrame == true){
-        m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
         renderSingleFrame();
    }
    else {

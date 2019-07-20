@@ -56,8 +56,8 @@ public:
             Running
         };
 
-    void initialiseRenderParams(const QString &qmlFile, const QString &outputDirectory = "",  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
-    void initialiseRenderParams(const QUrl &qmlFile, const QString &outputDirectory,  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, bool isSingleFrame=false, qint64 frameTime=0);
+    void initialiseRenderParams(const QString &qmlFileText, bool isSingleFrame=false, qint64 frameTime=0, const QString &outputDirectory = "",  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
+    void initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame=false, qint64 frameTime=0, const QString &outputDirectory = "",  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
     void prepareRenderer();
     void cleanup();
     void renderQml();
@@ -82,7 +82,7 @@ public:
     static void saveImage(const QImage &image, const QString &outputFile)
     {
         image.save(outputFile);
-        //m_frame = image;
+        m_frame = image;
     }
 
 private:
