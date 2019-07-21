@@ -1,16 +1,15 @@
 
-An overview : 
+An overview -
 
-root dir : 	QmlRenderer/
-			|
-			| --- src/  : contains QmlRenderer Library code which does the rendering
-			| --- lib/  : technically the build directory of QmlRenderer/src, contains .lib.so* files of QmlRenderer
-			| --- test/ : contains unit tests and CLI executable of QmlRenderer Library
-				  |
-				  | --- tests/ 	: contains unit tests for root/QmlRenderer/src/ 
-				  | --- run/	: contains CLI executable files
-				  		|
-				  		| --- exe/	: contains "QmlRender" - CLI executable file for QmlRenderer library 
-				  		| --- src/	: contains source code of "QmlRender" 
+src/ - contains source code of rendering part of the library
+test/ - contains unit tests and reference output frames for testing
+cli/ - contains the source code for the CLI executable of the library
 
-				  		
+To build - 
+
+mkdir build
+cd build
+qmake -r ..
+make 
+cd bin
+./QmlRender -o /path/to/output/directory -i /path/to/input/QML/file
