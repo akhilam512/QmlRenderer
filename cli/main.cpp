@@ -82,9 +82,8 @@ int main(int argc, char *argv[])
     QSize frameSize(frameSizeList.at(0).toInt(), frameSizeList.at(1).toInt());
 
     bool ifSingleFrame = parser.value(singleframe)=="true"? true:false ;
-
     QmlRender w;
-    w.renderer->initialiseRenderParams(QUrl(parser.value(file)), ifSingleFrame, parser.value(frametime).toLongLong(), parser.value(odir), outputName, parser.value(format), frameSize, parser.value(devicePRatio).toLongLong(), parser.value(duration).toInt(), parser.value(fps).toInt());
+    w.renderer->initialiseRenderParams(QUrl(parser.value(file)), ifSingleFrame, parser.value(frametime).toLongLong(), outputName, parser.value(odir), parser.value(format), frameSize, parser.value(devicePRatio).toLongLong(), parser.value(duration).toInt(), parser.value(fps).toInt());
     w.renderer->prepareRenderer();
     w.renderer->renderQml();
     return app.exec();
