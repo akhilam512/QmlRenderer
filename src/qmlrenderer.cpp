@@ -49,7 +49,6 @@ QmlRenderer::QmlRenderer(QObject *parent)
     // Qt Quick may need a depth and stencil buffer. Always make sure these are available.
     format.setDepthBufferSize(16);
     format.setStencilBufferSize(8);
-
     m_context = std::make_unique<QOpenGLContext>();
     m_context->setFormat(format);
     Q_ASSERT(format.depthBufferSize() == (m_context->format()).depthBufferSize());
@@ -158,9 +157,10 @@ void QmlRenderer::getAllParams()
     qDebug() << "frames" << m_fps;
     qDebug() << "file" << m_qmlFileText <<" : " << m_qmlFileUrl;
     qDebug() << "odir" << m_outputDirectory;
-    qDebug() << "output dir" << m_outputName;
+    qDebug() << "outputfile name" << m_outputName;
     qDebug() << "format" << m_outputFormat;
     qDebug() << "durration" << m_duration;
+    qDebug() << "single frame" << m_isSingleFrame;
 }
 
 
@@ -235,7 +235,6 @@ void QmlRenderer::prepareRenderer()
 void QmlRenderer::renderQml()
 {
     m_status = Running;
-
    if (m_isSingleFrame == true){
         renderSingleFrame();
    }
@@ -303,7 +302,6 @@ bool QmlRenderer::loadComponent(const QString &qmlFileText)
     if(!loadQML()) {
         return false;
     }
-
     return true;
 }
 
@@ -335,11 +333,7 @@ bool QmlRenderer::loadQML()
 void QmlRenderer::futureFinished()
 {
     m_futureCounter++;
-    if (m_futureCounter == (m_frames - 1)) {
-        m_status = NotRunning;
-        emit terminate();
-    }
-    else if(m_isSingleFrame) { // if single frame, it is guaranteed that this will get called exactly once
+    if (m_futureCounter == (m_frames - 1) || m_isSingleFrame) {
         m_status = NotRunning;
         emit terminate();
     }
@@ -361,7 +355,7 @@ void QmlRenderer::renderEntireQml()
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
     watcher->setFuture(QtConcurrent::run(saveImage, m_fbo->toImage(), m_outputFile));
     m_futures.append((std::move(watcher)));
-    //Q_ASSERT(m_futures.back()->isRunning()); // make sure the last future is running
+    Q_ASSERT(m_futures.back()->isRunning()); // make sure the last future is running
 
     //Advance animation
     m_animationDriver->advance();
@@ -405,7 +399,6 @@ void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames with
     m_currentFrame++;
 
     m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
-
     watcher = std::make_unique<QFutureWatcher<void>>();
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
     if(m_currentFrame ==  m_selectFrame) {
