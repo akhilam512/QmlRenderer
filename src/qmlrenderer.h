@@ -81,8 +81,10 @@ public:
 
     static void saveImage(const QImage &image, const QString &outputFile)
     {
-        image.save(outputFile);
         m_frame = image;
+        if(!m_ifProducer) {
+            image.save(outputFile); // no need to save frames if it is not for the producer
+        }
     }
 
 private:
@@ -126,6 +128,7 @@ private:
     QString m_qmlFileText;
     QUrl m_qmlFileUrl;
     static QImage m_frame;
+    static bool m_ifProducer;
     qint64 m_frameTime;
     bool m_isSingleFrame;
 

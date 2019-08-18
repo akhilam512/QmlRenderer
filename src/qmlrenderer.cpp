@@ -46,7 +46,6 @@ QmlRenderer::QmlRenderer(QObject *parent)
     , m_status(NotRunning)
 {
     QSurfaceFormat format;
-    // Qt Quick may need a depth and stencil buffer. Always make sure these are available.
     format.setDepthBufferSize(16);
     format.setStencilBufferSize(8);
     m_context = std::make_unique<QOpenGLContext>();
@@ -79,6 +78,7 @@ QmlRenderer::QmlRenderer(QObject *parent)
     connect(m_quickWindow.get(), SIGNAL(sceneGraphError(QQuickWindow::SceneGraphError, const QString)), this, SLOT(displaySceneGraphError(QQuickWindow::SceneGraphError, const QString)));
     connect(m_qmlEngine.get(), SIGNAL(warnings(QList<QQmlError>)), this, SLOT(displayQmlError(QList<QQmlError>)));
     connect(this, SIGNAL(terminate()), this, SLOT(slotTerminate()));
+
 }
 
 QmlRenderer::~QmlRenderer()
@@ -88,6 +88,7 @@ QmlRenderer::~QmlRenderer()
 }
 
 QImage QmlRenderer::m_frame = QImage();
+bool QmlRenderer::m_ifProducer = false;
 
 void QmlRenderer::slotTerminate()
 {
@@ -176,6 +177,9 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlFileText, bool isSing
     m_outputFormat = outputFormat;
     m_isSingleFrame = isSingleFrame;
     m_frameTime = frameTime;
+    m_ifProducer = true; // rendering is being prepared to be fed for a producer
+
+    Q_ASSERT(m_fps!=0);
 
     if(isSingleFrame) {
         m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
@@ -199,6 +203,8 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFr
     m_outputFormat = outputFormat;
     m_isSingleFrame = isSingleFrame;
     m_frameTime = frameTime;
+
+    Q_ASSERT(m_fps!=0);
 
     if(isSingleFrame) {
         m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
@@ -225,7 +231,7 @@ void QmlRenderer::prepareRenderer()
 
     m_currentFrame = 0;
     m_futureCounter = 0;
-
+    Q_ASSERT(m_fps!=0);
     m_animationDriver = std::make_unique<QmlAnimationDriver>(1000/m_fps);
     m_animationDriver->install();
     Q_ASSERT(!m_animationDriver->isRunning());
