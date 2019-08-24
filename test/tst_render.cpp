@@ -1,3 +1,24 @@
+/*
+Copyright (C) 2019  Akhil K Gangadharan <helloimakhil@gmail.com>
+This file is part of Kdenlive. See www.kdenlive.org.
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either version 2 of
+the License or (at your option) version 3 or any later version
+accepted by the membership of KDE e.V. (or its successor approved
+by the membership of KDE e.V.), which shall act as a proxy
+defined in Section 14 of version 3 of the license.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include "tst_render.h"
 #include "qmlrenderer.h"
 #include <QObject>
@@ -5,8 +26,7 @@
 #include <memory>
 
 Render::Render()
-{      
-
+{          
 }
 
 Render::~Render()
@@ -17,11 +37,11 @@ Render::~Render()
 void Render::test_case1()  // base initialisation test
 {
     QmlRenderer *m_renderer = new QmlRenderer(this);
-    QDir rootPath = QDir::currentPath();
-    m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), false, 0, QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "test_output", "jpg", QSize(1280,720), 1, 1000, 25);
+    QString libraryOutputDir = QDir::currentPath() + "/../lib_output";
+    m_renderer->initialiseRenderParams(QUrl(QFINDTESTDATA("test.qml")), false, 0, "test_output", libraryOutputDir, "jpg", QSize(1280,720), 1, 1000, 25);
     m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
-    QVERIFY2(m_renderer->getActualFrames()!=0, "VALUE ERROR: Frames not supposed to be zero");
+    QVERIFY2(m_renderer->getCalculatedFramesCount()!=0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus()!=false, "SCENE GRAPH ERROR: Scene graph not initialised");
     QVERIFY2(m_renderer->getAnimationDriverStatus()==false, "ANIMATION DRIVER ERROR: Driver not supposed to be running");
     QVERIFY2(m_renderer->getfboStatus()==true, "FRAME BUFFER OBJECT ERROR: FBO not bound");
@@ -31,101 +51,140 @@ void Render::test_case1()  // base initialisation test
 void Render::test_case2() // QmlRenderer::renderEntireQml() test
 {
     QmlRenderer *m_renderer = new QmlRenderer(this);
-    QDir rootPath = QDir::currentPath();
-    m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), false, 0, QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "test_output", "jpg", QSize(1280,720), 1, 1000, 25);
+    QString libraryOutputDir = QDir::currentPath() + "/../lib_output";
+    m_renderer->initialiseRenderParams(QUrl(QFINDTESTDATA("test.qml")), false, 0, "test_output", libraryOutputDir, "jpg", QSize(1280,720), 1, 1000, 25);
     m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
-    QVERIFY2(m_renderer->getActualFrames() != 0, "VALUE ERROR: Frames not supposed to be zero");
+    QVERIFY2(m_renderer->getCalculatedFramesCount() != 0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus() != false, "SCENE GRAPH ERROR: Scene graph not initialised");
     QVERIFY2(m_renderer->getAnimationDriverStatus() == false, "ANIMATION DRIVER ERROR: Driver not supposed to be running");
     QVERIFY2(m_renderer->getfboStatus() == true, "FRAME BUFFER OBJECT ERROR: FBO not bound");
     m_renderer->renderQml();
-    QTest::qWait(2000); // quick fix (since futures are still running in the rendering)
-    QVERIFY2(m_renderer->getActualFrames() == m_renderer->getCurrentFrame(), "RENDERING ERROR: Missing frames");
 
+    // We wait till the signal QmlRenderer::terminate is emitted from the renderer
+    QTimer timer;
+    timer.setSingleShot(true);
+    QEventLoop loop;
+    connect( m_renderer, &QmlRenderer::terminate, &loop, &QEventLoop::quit );
+    connect( &timer, &QTimer::timeout, &loop, &QEventLoop::quit );
+    timer.start(2000);
+    loop.exec();
 
-    QVERIFY2(m_renderer->getFutureCount() == m_renderer->getActualFrames(), "FUTURE ERROR: Future handling went wrong");
+    QVERIFY2(m_renderer->getCalculatedFramesCount() == m_renderer->getActualFramesCount(), "RENDERING ERROR: Missing frames");
+    QVERIFY2(m_renderer->getFutureCount() == m_renderer->getCalculatedFramesCount(), "FUTURE HANDLING ERROR: Enough futures were not found");
+    m_renderer->cleanup();
+
 }
 
 void Render::test_case3() // QmlRenderer::renderSingleFrame() test
 {
     QmlRenderer *m_renderer = new QmlRenderer(this);
-
-    QDir rootPath = QDir::currentPath();
-    m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), true, 80, QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "test_output", "jpg", QSize(1280,720), 1, 1000, 25);
+    QString libraryOutputDir = QDir::currentPath() + "/../lib_output";
+    m_renderer->initialiseRenderParams(QUrl(QFINDTESTDATA("test.qml")), true, 80, "test_output", libraryOutputDir, "jpg", QSize(1280,720), 1, 1000, 25);
     m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
-    QVERIFY2(m_renderer->getActualFrames()!=0, "VALUE ERROR: Frames not supposed to be zero");
+    QVERIFY2(m_renderer->getCalculatedFramesCount()!=0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus()!=false, "SCENE GRAPH ERROR: Scene graph not initialised");
-    QVERIFY2(m_renderer->getAnimationDriverStatus()==false, "ANIMATION DRIVER ERROR: Driver not supposed to be running");
     QVERIFY2(m_renderer->getfboStatus()==true, "FRAME BUFFER OBJECT ERROR: FBO not bound");
     m_renderer->renderQml();
-    QTest::qWait(2000); // quick fix (futures still running in rendering)
-    QVERIFY2(m_renderer->getActualFrames()==1, "RENDERING ERROR: Missing frame");
+
+    // We wait till the signal QmlRenderer::terminate is emitted from the renderer
+    QTimer timer;
+    timer.setSingleShot(true);
+    QEventLoop loop;
+    connect( m_renderer, &QmlRenderer::terminate, &loop, &QEventLoop::quit );
+    connect( &timer, &QTimer::timeout, &loop, &QEventLoop::quit );
+    timer.start(2000);
+    loop.exec();
+    QVERIFY2(m_renderer->getActualFramesCount() == m_renderer->getSelectFrame(), "FRAME NOT RENDERED: The required frame was not rendered properly");
+    //QVERIFY2(m_renderer->getFutureCount() == 1, "FUTURE HANDLING ERROR: Futures not handled properly");
     m_renderer->cleanup();
 }
 
 void Render::test_case4()  // QmlRenderer::cleanup() test
 {
     QmlRenderer *m_renderer = new QmlRenderer(this);
-
-    QDir rootPath = QDir::currentPath();
-    m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), false, 0, QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "test_output", "jpg", QSize(1280,720), 1, 1000, 25);
+    QString libraryOutputDir = QDir::currentPath() + "/../lib_output";
+    m_renderer->initialiseRenderParams(QUrl(QFINDTESTDATA("test.qml")), false, 0, "test_output", libraryOutputDir, "jpg", QSize(1280,720), 1, 1000, 25);
     m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
-    QVERIFY2(m_renderer->getActualFrames() != 0, "VALUE ERROR: Frames not supposed to be zero");
+    QVERIFY2(m_renderer->getCalculatedFramesCount() != 0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus() != false, "SCENE GRAPH ERROR: Scene graph not initialised");
-    QVERIFY2(m_renderer->getAnimationDriverStatus() == false, "ANIMATION DRIVER ERROR: Driver not supposed to be running");
     QVERIFY2(m_renderer->getfboStatus() == true, "FRAME BUFFER OBJECT ERROR: FBO not bound");
     m_renderer->renderQml();
-    QTest::qWait(2000); // quick fix (futures still running in rendering)
-    QVERIFY2(m_renderer->getActualFrames() == m_renderer->getCurrentFrame(), "RENDERING ERROR: Missing frames");
-    QVERIFY2(m_renderer->getFutureCount() == m_renderer->getActualFrames(), "FUTURE ERROR: Future handling went wrong");
+
+    // We wait till the signal QmlRenderer::terminate is emitted from the renderer
+    QTimer timer;
+    timer.setSingleShot(true);
+    QEventLoop loop;
+    connect( m_renderer, &QmlRenderer::terminate, &loop, &QEventLoop::quit );
+    connect( &timer, &QTimer::timeout, &loop, &QEventLoop::quit );
+    timer.start(2000);
+    loop.exec();
+
+    QVERIFY2(m_renderer->getCalculatedFramesCount() == m_renderer->getActualFramesCount(), "RENDERING ERROR: Missing frames");
+    QVERIFY2(m_renderer->getFutureCount() == m_renderer->getActualFramesCount(), "FUTURE ERROR: Future handling went wrong");
     m_renderer->cleanup();
     QVERIFY2(m_renderer->getAnimationDriverStatus() == false, "ANIMATION DRIVER ERROR: Animation driver still running");
-    // more?
+    QVERIFY2(m_renderer->getfboStatus() == false, "FBO ERROR: Animation driver still running");
 }
 
 void Render::test_case5() // Integration test - QmlRenderer::renderEntireQml()
 {
     QmlRenderer *m_renderer = new QmlRenderer(this);
-    QDir rootPath = QDir::currentPath();
-    m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), false, 0, QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "output", "jpg", QSize(1280,720), 1, 1000, 25);
+    QString referenceOutputDir = QDir::currentPath() + "/../reference_output";
+    QString libraryOutputDir = QDir::currentPath() + "/../lib_output";
+    m_renderer->initialiseRenderParams(QUrl(QFINDTESTDATA("test.qml")), false, 0,  "test_output", libraryOutputDir,  "jpg", QSize(1280,720), 1.0, 1000, 25);
     m_renderer->prepareRenderer();
     m_renderer->renderQml();
-    QTest::qWait(2000); // quick fix (futures still running in rendering)
+    // We wait till the signal QmlRenderer::terminate is emitted from the renderer
+
+    QTimer timer;
+    timer.setSingleShot(true);
+    QEventLoop loop;
+    connect( m_renderer, &QmlRenderer::terminate, &loop, &QEventLoop::quit );
+    connect( &timer, &QTimer::timeout, &loop, &QEventLoop::quit );
+    timer.start(10000);
+    loop.exec();
+
+
+    m_renderer->cleanup();
+    QVERIFY2(m_renderer->getCalculatedFramesCount() == m_renderer->getActualFramesCount(), "RENDERING ERROR: Missing frames");
+
     QImage orig_frame;
     QImage lib_frame;
-    orig_frame = QImage(QDir::cleanPath(QDir::currentPath() + "/../sampledata/output_orig/output_1.jpg"));
-    lib_frame = QImage(QDir::cleanPath(QDir::currentPath() + "/../sampledata/output_lib/output_1.jpg")); // test first frame
+    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_frame_2.jpg"));
+    lib_frame = QImage(libraryOutputDir + "/test_output_2.jpg");
     QVERIFY2(orig_frame == lib_frame, "Rendering error");
 
-    orig_frame = QImage(QDir::cleanPath(QDir::currentPath() + "/../sampledata/output_orig/output_13.jpg"));
-    lib_frame = QImage(QDir::cleanPath(QDir::currentPath() + "/../sampledata/output_lib/output_13.jpg")); // test a middle frame
+    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_frame_13.jpg"));
+    lib_frame = QImage(libraryOutputDir + "/test_output_13.jpg");
     QVERIFY2(orig_frame == lib_frame, "Rendering error");
 
-    orig_frame = QImage(QDir::cleanPath(QDir::currentPath() + "/../sampledata/output_orig/output_25.jpg"));
-    lib_frame = QImage(QDir::cleanPath(QDir::currentPath() + "/../sampledata/output_lib/output_25.jpg")); // test last frame
+    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_frame_25.jpg"));
+    lib_frame = QImage(libraryOutputDir + "/test_output_25.jpg");
     QVERIFY2(orig_frame == lib_frame, "Rendering error");
-    m_renderer->cleanup();
 }
 
 void Render::test_case6() // integration test : QmlRenderer::renderSingleFrame()
 {
     QmlRenderer *m_renderer = new QmlRenderer(this);
-    QDir rootPath = QDir::currentPath();
-    m_renderer->initialiseRenderParams(QDir::cleanPath(rootPath.currentPath() + "/../sampledata/test.qml"), true, 800, QDir::cleanPath(rootPath.currentPath() + "/../sampledata/output_lib/"), "output", "jpg", QSize(1280,720), 1, 1000, 25); // 800ms means 20th frame for 25 fps and 1000ms duration
+    QString libraryOutputDir = QDir::currentPath() + "/../lib_output";
+    QString referenceOutputDir = QDir::currentPath() + "/../reference_output";
+
+    m_renderer->initialiseRenderParams(QUrl(QFINDTESTDATA("test.qml")), true, 800, "test_output", libraryOutputDir, "jpg", QSize(1280,720), 1, 1000, 25);
+    // at frameTime = 800, 20th frame is rendered
+
     m_renderer->prepareRenderer();
     QVERIFY2(m_renderer->getStatus() != m_renderer->Status::NotRunning, "STATUS ERROR : Not supposed to be running");
-    QVERIFY2(m_renderer->getActualFrames()!=0, "VALUE ERROR: Frames not supposed to be zero");
+    QVERIFY2(m_renderer->getCalculatedFramesCount()!=0, "VALUE ERROR: Frames not supposed to be zero");
     QVERIFY2(m_renderer->getSceneGraphStatus()!=false, "SCENE GRAPH ERROR: Scene graph not initialised");
-    QVERIFY2(m_renderer->getAnimationDriverStatus()==false, "ANIMATION DRIVER ERROR: Driver not supposed to be running");
     QVERIFY2(m_renderer->getfboStatus()==true, "FRAME BUFFER OBJECT ERROR: FBO not bound");
 
     m_renderer->renderQml();
 
-    QImage orig_frame = QImage(QDir::currentPath() + "/output_orig/output_20.jpg"); // test
-    QImage lib_frame = QImage(QDir::currentPath() + "/output_lib/output_20.jpg");
+    QImage orig_frame = QImage(QFINDTESTDATA("/reference_output/output_frame_20.jpg"));
+    QImage lib_frame = QImage(libraryOutputDir + "/test_output_20.jpg");
     QVERIFY2(orig_frame == lib_frame, "Rendering error");
 
     m_renderer->cleanup();
