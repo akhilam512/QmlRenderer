@@ -41,9 +41,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "qmlrenderer.h"
 #include "qmlanimationdriver.h"
 
+/*
+ * Note:
+ * 1 - It is the responsbility of the implementing program to call cleanup(). The program can
+ *     do this by catching the terminate() signal and connecting it to a slot.
+ *
+*/
+
 QmlRenderer::QmlRenderer(QObject *parent)
     : QObject(parent)
     , m_status(NotRunning)
+    , m_framesCount(0)
+    , m_currentFrame(0)
+    , m_futureFinishedCounter(0)
 {
     QSurfaceFormat format;
     format.setDepthBufferSize(16);
@@ -77,8 +87,6 @@ QmlRenderer::QmlRenderer(QObject *parent)
 
     connect(m_quickWindow.get(), SIGNAL(sceneGraphError(QQuickWindow::SceneGraphError, const QString)), this, SLOT(displaySceneGraphError(QQuickWindow::SceneGraphError, const QString)));
     connect(m_qmlEngine.get(), SIGNAL(warnings(QList<QQmlError>)), this, SLOT(displayQmlError(QList<QQmlError>)));
-    connect(this, SIGNAL(terminate()), this, SLOT(slotTerminate()));
-
 }
 
 QmlRenderer::~QmlRenderer()
@@ -89,12 +97,6 @@ QmlRenderer::~QmlRenderer()
 
 QImage QmlRenderer::m_frame = QImage();
 bool QmlRenderer::m_ifProducer = false;
-
-void QmlRenderer::slotTerminate()
-{
-    cleanup();
-    exit(0);
-}
 
 void QmlRenderer::displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message)
 {
@@ -113,14 +115,19 @@ int QmlRenderer::getStatus()
     return m_status;
 }
 
-int QmlRenderer::getActualFrames()
+int QmlRenderer::getCalculatedFramesCount()
 {
-    return m_frames;
+    return m_framesCount;
 }
 
-int QmlRenderer::getCurrentFrame()
+int QmlRenderer::getActualFramesCount()
 {
     return m_currentFrame;
+}
+
+int QmlRenderer::getSelectFrame()
+{
+    return m_selectFrame;
 }
 
 bool QmlRenderer::getSceneGraphStatus()
@@ -133,7 +140,7 @@ bool QmlRenderer::getSceneGraphStatus()
 
 bool QmlRenderer::getAnimationDriverStatus()
 {
-    if(m_status == Initialised) {
+    if(m_status == Initialised && m_animationDriver) {
         return m_animationDriver->isRunning();
     }
     return false;
@@ -141,7 +148,7 @@ bool QmlRenderer::getAnimationDriverStatus()
 
 bool QmlRenderer::getfboStatus()
 {
-    if(m_status == Initialised) {
+    if(m_status == Initialised && m_fbo) {
         return m_fbo->isBound();
     }
 
@@ -162,6 +169,9 @@ void QmlRenderer::getAllParams()
     qDebug() << "format" << m_outputFormat;
     qDebug() << "durration" << m_duration;
     qDebug() << "single frame" << m_isSingleFrame;
+    qDebug() << "actual frames " << m_currentFrame;
+    qDebug() << "calculated frames " << m_framesCount;
+    qDebug() << "future count " << m_futureCounter;
 }
 
 
@@ -177,13 +187,15 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlFileText, bool isSing
     m_outputFormat = outputFormat;
     m_isSingleFrame = isSingleFrame;
     m_frameTime = frameTime;
-    m_ifProducer = true; // rendering is being prepared to be fed for a producer
+    m_ifProducer = true; // true value means renderer is being prepared for MLT QML producer
 
     Q_ASSERT(m_fps!=0);
 
     if(isSingleFrame) {
         m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
     }
+
+    m_framesCount = (m_duration / 1000 )* m_fps;
 
     if (!loadComponent(m_qmlFileText)) {
        return;
@@ -203,14 +215,13 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFr
     m_outputFormat = outputFormat;
     m_isSingleFrame = isSingleFrame;
     m_frameTime = frameTime;
-
     Q_ASSERT(m_fps!=0);
 
     if(isSingleFrame) {
         m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
     }
 
-    m_frames = (m_duration / 1000 )* m_fps;
+    m_framesCount = (m_duration / 1000 )* m_fps;
 
     if (!loadComponent(m_qmlFileUrl)) {
        return;
@@ -225,27 +236,21 @@ void QmlRenderer::prepareRenderer()
 
     createFbo();
 
-    if (!m_context->makeCurrent(m_offscreenSurface.get())) {
-        return;
-    }
-
-    m_currentFrame = 0;
-    m_futureCounter = 0;
     Q_ASSERT(m_fps!=0);
     m_animationDriver = std::make_unique<QmlAnimationDriver>(1000/m_fps);
     m_animationDriver->install();
-    Q_ASSERT(!m_animationDriver->isRunning());
+    //Q_ASSERT(!m_animationDriver->isRunning());
     m_status = Initialised;
 }
 
 void QmlRenderer::renderQml()
 {
-    m_status = Running;
+   m_status = Running;
    if (m_isSingleFrame == true){
         renderSingleFrame();
    }
    else {
-        renderEntireQml();
+        renderAllFrames();
    }
 }
 
@@ -254,7 +259,6 @@ void QmlRenderer::cleanup()
     m_animationDriver->uninstall();
     m_animationDriver.reset();
     destroyFbo();
-    return;
 }
 
 void QmlRenderer::createFbo()
@@ -270,13 +274,15 @@ void QmlRenderer::destroyFbo()
     m_fbo.reset();
 }
 
-void QmlRenderer::checkComponent()
+bool QmlRenderer::checkIfComponentOK()
 {
      if (m_qmlComponent->isError()) {
         const QList<QQmlError> errorList = m_qmlComponent->errors();
         for (const QQmlError &error : errorList)
             qDebug() << error.url() << error.line() << error;
-    }
+        return false;
+     }
+    return true;
 }
 
 bool QmlRenderer::loadComponent(const QUrl &qmlFileUrl)
@@ -313,11 +319,17 @@ bool QmlRenderer::loadComponent(const QString &qmlFileText)
 
 bool QmlRenderer::loadQML()
 {
-    checkComponent();
+    if(!checkIfComponentOK()) {
+        return false;
+    }
+
     QQmlEngine::setObjectOwnership(m_rootObject.get(), QQmlEngine::CppOwnership);
     m_rootObject.reset(m_qmlComponent->create());
     Q_ASSERT(m_rootObject);
-    checkComponent();
+
+    if(!checkIfComponentOK()) {
+        return false;
+    }
 
     m_rootItem.reset(qobject_cast<QQuickItem*>(m_rootObject.get()));
 
@@ -338,14 +350,16 @@ bool QmlRenderer::loadQML()
 
 void QmlRenderer::futureFinished()
 {
-    m_futureCounter++;
-    if (m_futureCounter == (m_frames - 1) || m_isSingleFrame) {
+    m_futureFinishedCounter++;
+    if (getFutureCount() == (m_framesCount - 1) || m_isSingleFrame) {
         m_status = NotRunning;
+        qDebug() << "OK HERE GOES RENDER DATA!!!!!!!!!!!!!!!! GOD SAVE THE KING";
+        getAllParams();
         emit terminate();
     }
 }
 
-void QmlRenderer::renderEntireQml()
+void QmlRenderer::renderAllFrames()
 {
     // Render frame
     m_renderControl->polishItems();
@@ -361,13 +375,13 @@ void QmlRenderer::renderEntireQml()
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
     watcher->setFuture(QtConcurrent::run(saveImage, m_fbo->toImage(), m_outputFile));
     m_futures.append((std::move(watcher)));
-    Q_ASSERT(m_futures.back()->isRunning()); // make sure the last future is running
+    //Q_ASSERT(m_futures.back()->isRunning()); // make sure the last future is running
 
     //Advance animation
     m_animationDriver->advance();
     Q_ASSERT(m_animationDriver->isRunning());
 
-    if (m_currentFrame < m_frames) {
+    if (m_currentFrame < m_framesCount) {
         //Schedule the next update
         QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
     }
@@ -381,7 +395,7 @@ bool QmlRenderer::event(QEvent *event)
             return true;
         }
         else {
-            renderEntireQml();
+            renderAllFrames();
             return true;
         }
     }
@@ -416,7 +430,7 @@ void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames with
     //advance animation
     m_animationDriver->advance();
 
-    if (m_currentFrame < m_frames) {
+    if (m_currentFrame < m_framesCount) {
         //Schedule the next update
         QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
     }

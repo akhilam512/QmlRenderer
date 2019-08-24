@@ -56,29 +56,90 @@ public:
             Running
         };
 
+    /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QString, used for QML MLT Producer
+    */
     void initialiseRenderParams(const QString &qmlFileText, bool isSingleFrame=false, qint64 frameTime=0, const QString &outputDirectory = "",  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
+
+    /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QUrl
+    */
     void initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame=false, qint64 frameTime=0, const QString &outputDirectory = "",  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
-    void prepareRenderer();
-    void cleanup();
-    void renderQml();
-    void getAllParams();
-    void setFrame(const QImage &frame);
+
+    /* @brief Loads QML components - overloaded: called by overloaded initialiseRenderParams which uses QUrl for loading QML
+    */
     bool loadComponent(const QUrl &qmlFileUrl);
+
+    /* @brief Loads QML components - overloaded: called by overloaded initialiseRenderParams which uses QString QML file
+    */
     bool loadComponent(const QString &qmlFileText); // over loaded - used for MLT QML producer
+
+    /* @brief Sets m_status to 'Initialised', creates FBO, installs animation driver
+    */
+    void prepareRenderer();
+
+    /* @brief Uninstalls the animation driver, destroys FBO
+     * @description cleanup() must be called by the program using QmlRenderer library seperately
+    */
+    void cleanup();
+
+    /* @brief Begins rendering and sets m_status to 'Running;
+     * @description Depending on value of m_isSingleFrame, renderSingleFrame() or renderEntireQml() is called from here
+    */
+    void renderQml();
+
+    /* @brief Getter method for class members
+    */
+    void getAllParams();
+
+    /* @brief Returns true if m_status is 'Initialised' and m_quickWindow's scene graph is initialised
+    */
     bool getSceneGraphStatus();
+
+    /* @brief Returns true if m_status is 'Initialised' and m_animationDriver is initialised
+    */
     bool getAnimationDriverStatus();
+
+    /* @brief Returns true if m_status is 'Initialised' and m_Fbo is bound
+    */
     bool getfboStatus();
+
+    /* @brief Returns state of m_status
+    */
     int getStatus();
-    int getCurrentFrame();
-    int getActualFrames();
+
+    /* @brief Returns m_currentFrame which is the number of frames actually rendered or atleast iterated
+    */
+    int getActualFramesCount(); // returns the number of frames actually rendered
+
+    /* @brief Returns m_framesCount which is the number of frames that are supposed to be rendered (fps x duration)
+    */
+    int getCalculatedFramesCount();
+
+    /* @brief Returns m_selectFrame which is the frame being rendered when m_isSingleFrame is set true
+    */
+    int getSelectFrame();
+
+    /* @brief Returns the size of the QVector of futures stored in m_future
+    */
     int getFutureCount();
+
+    /* @brief Called by renderQml() when m_isSingleFrame is true, to render only a specific frame
+    */
     void renderSingleFrame();
 
+    /* @brief Called by renderQml() when m_isSingleFrame is false, to render all the frames
+    */
+    void renderAllFrames();
+
+
+    /* @brief Returns the rendered frame stored in m_frame
+    */
     static QImage getFrame()
     {
         return m_frame;
     }
 
+    /* @brief Called after the future finishes for a frame after rendering to save the frame in the given output directory and format
+    */
     static void saveImage(const QImage &image, const QString &outputFile)
     {
         m_frame = image;
@@ -88,13 +149,28 @@ public:
     }
 
 private:
+    /* @brief Creates the Frame Buffer Object and sets render target to the FBO
+    */
     void createFbo();
+
+    /* @brief Resets the created Frame Buffer Object
+    */
     void destroyFbo();
-    void renderEntireQml();
-    void checkComponent();
-    void renderFrames();
+
+    /* @brief Returns true if QML components are loaded properly
+    */
+    bool checkIfComponentOK();
+
+    /* @brief Called by loadComponent() to prepare m_quickWindow with the given size
+    */
     bool loadQML();
+
+    /* @brief Returns true if m_status is 'Running'
+    */
     bool isRunning();
+
+    /* Overriden event() handles the Update requests sent by renderAllFrames() / renderSingleFrame() required for rendering
+    */
     bool event(QEvent *event) override;
 
     std::unique_ptr<QOpenGLContext> m_context;
@@ -114,13 +190,12 @@ private:
     qreal m_dpr;
     QSize m_size;
     Status m_status;
-    qint64 m_selectFrame;
-
+    int m_selectFrame;
     int m_duration;  // by default = 5 seconds
     int m_fps; // by default = 24 fps
-    int m_frames;
+    int m_framesCount;
     int m_currentFrame;
-    int m_futureCounter;
+    int m_futureFinishedCounter;
     QString m_outputName;
     QString m_outputFormat;
     QString m_outputDirectory;
@@ -128,20 +203,28 @@ private:
     QString m_qmlFileText;
     QUrl m_qmlFileUrl;
     static QImage m_frame;
-    static bool m_ifProducer;
+    static bool m_ifProducer;  //set true when overloaded initialiseRenderParams() for producer is called
     qint64 m_frameTime;
     bool m_isSingleFrame;
 
 signals:
-    void finished();
-    void terminate();
+    void finished(); 
+    void terminate(); // can be used by an implementing program to connect with a slot to close the execution
+                      // used by QmlRender (CLI implementation of the lib) and connected with slot to quit the program
+                      // used in test module
 
 private slots:
+    /* @brief Slot activated when a future finishes, m_futureFinisheCounter is incremented and checks if rendering needs to be stopped, sets m_status to 'NotRunning' and emits terminate()
+    */
     void futureFinished();
-    void displayQmlError(QList<QQmlError> warnings);
-    void displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message);
-    void slotTerminate();
 
+    /* @brief Slot activated when handling the QML file returns with warning
+    */
+    void displayQmlError(QList<QQmlError> warnings);
+
+    /* @brief Slot activated when the associated Scene graph returns errors
+    */
+    void displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message);
 };
 
 #endif // QMLRENDERER_H
