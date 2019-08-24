@@ -25,8 +25,15 @@ QmlRender::QmlRender(QObject *parent)
     : QObject(parent)
 {
     renderer = std::make_unique<QmlRenderer>(new QmlRenderer);
+    connect(renderer.get(), &QmlRenderer::terminate, this, &QmlRender::slotTerminate);
 }
 
 QmlRender::~QmlRender()
 {
+}
+
+void QmlRender::slotTerminate()
+{
+    renderer->cleanup();
+    exit(0);
 }
