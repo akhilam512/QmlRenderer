@@ -171,7 +171,6 @@ void QmlRenderer::getAllParams()
     qDebug() << "single frame" << m_isSingleFrame;
     qDebug() << "actual frames " << m_currentFrame;
     qDebug() << "calculated frames " << m_framesCount;
-    qDebug() << "future count " << m_futureCounter;
 }
 
 
