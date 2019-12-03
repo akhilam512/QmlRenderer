@@ -44,5 +44,6 @@ private slots:
     void test_case4();
     void test_case5();
     void test_case6();
+    void test_case7();
 };
 #endif // TST_RENDER_H

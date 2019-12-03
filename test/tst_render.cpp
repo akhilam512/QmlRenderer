@@ -137,6 +137,7 @@ void Render::test_case5() // Integration test - QmlRenderer::renderEntireQml()
     m_renderer->initialiseRenderParams(QUrl(QFINDTESTDATA("test.qml")), false, 0,  "test_output", libraryOutputDir,  "jpg", QSize(1280,720), 1.0, 1000, 25);
     m_renderer->prepareRenderer();
     m_renderer->renderQml();
+
     // We wait till the signal QmlRenderer::terminate is emitted from the renderer
 
     QTimer timer;
@@ -153,15 +154,15 @@ void Render::test_case5() // Integration test - QmlRenderer::renderEntireQml()
 
     QImage orig_frame;
     QImage lib_frame;
-    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_frame_2.jpg"));
+    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_2.jpg"));
     lib_frame = QImage(libraryOutputDir + "/test_output_2.jpg");
     QVERIFY2(orig_frame == lib_frame, "Rendering error");
 
-    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_frame_13.jpg"));
+    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_13.jpg"));
     lib_frame = QImage(libraryOutputDir + "/test_output_13.jpg");
     QVERIFY2(orig_frame == lib_frame, "Rendering error");
 
-    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_frame_25.jpg"));
+    orig_frame = QImage(QFINDTESTDATA("/reference_output/output_25.jpg"));
     lib_frame = QImage(libraryOutputDir + "/test_output_25.jpg");
     QVERIFY2(orig_frame == lib_frame, "Rendering error");
 }
@@ -189,6 +190,38 @@ void Render::test_case6() // integration test : QmlRenderer::renderSingleFrame()
 
     m_renderer->cleanup();
 
+}
+
+void Render::test_case7()
+{
+    QmlRenderer *m_renderer = new QmlRenderer(this);
+    qDebug() << QDir::currentPath();
+    QString libraryOutputDir = QDir::currentPath() + "/../../QmlRenderer/test";
+
+    const QString qmlFileUrl = QDir::currentPath() + "/../../QmlRenderer/test/test0.qml";
+    
+    m_renderer->initRenderParams(qmlFileUrl, true, 720, 596, QImage::Format_RGBA8888);
+    m_renderer->getAllParams();
+
+    m_renderer->prepareRenderer();
+    m_renderer->renderQml();
+
+    // We wait till the signal QmlRenderer::terminate is emitted from the renderer
+    QTimer timer;
+    timer.setSingleShot(true);
+    QEventLoop loop;
+    connect( m_renderer, &QmlRenderer::terminate, &loop, &QEventLoop::quit );
+    connect( &timer, &QTimer::timeout, &loop, &QEventLoop::quit );
+    timer.start(10000);
+    loop.exec();
+
+    QImage renderedFrame = QmlRenderer::getFrame();
+    QVERIFY2(renderedFrame.save(libraryOutputDir + "/lib_output/test_output_1.jpg") == true, "Rendered Frame Not Saved");
+
+    QImage orig_frame = QImage(libraryOutputDir + "/reference_output/output_frame_1.jpg", "jpg");
+    QVERIFY2(orig_frame == renderedFrame, "Rendering error");
+
+    m_renderer->cleanup();
 }
 
 QTEST_MAIN(Render)
