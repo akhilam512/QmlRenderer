@@ -171,22 +171,27 @@ void QmlRenderer::getAllParams()
     qDebug() << "single frame" << m_isSingleFrame;
     qDebug() << "actual frames " << m_currentFrame;
     qDebug() << "calculated frames " << m_framesCount;
+    qDebug() << "frame time " << m_frameTime;
 }
 
 
-void QmlRenderer::initialiseRenderParams(const QString &qmlFileText, bool isSingleFrame, qint64 frameTime, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps)
+void QmlRenderer::initRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame, int width, int height,  const QImage::Format imageFormat, qint64 frameTime, const QString &outputFormat, qreal devicePixelRatio, int durationMs, int fps)
 {
-    m_qmlFileText = qmlFileText;
-    m_size = size;
+    //TODO: remember to remove DURATION Once you confirm that the number of frames is not actually needed by the producer
+    //TODO: write legible tests
+
+    m_ifProducer = true;
+    m_ImageFormat = imageFormat;
+    m_qmlFileUrl = qmlFileUrl;
+    m_size = QSize(width, height);
     m_dpr = devicePixelRatio;
     m_duration = durationMs;
-    m_fps = fps;
-    m_outputName = filename;
-    m_outputDirectory = outputDirectory;
     m_outputFormat = outputFormat;
     m_isSingleFrame = isSingleFrame;
-    m_frameTime = frameTime;
-    m_ifProducer = true; // true value means renderer is being prepared for MLT QML producer
+
+    m_frameTime = 1000; //hard coded for the time being to test QML files with no animation
+    m_fps = 1;
+    m_duration = 1000;
 
     Q_ASSERT(m_fps!=0);
 
@@ -196,7 +201,7 @@ void QmlRenderer::initialiseRenderParams(const QString &qmlFileText, bool isSing
 
     m_framesCount = (m_duration / 1000 )* m_fps;
 
-    if (!loadComponent(m_qmlFileText)) {
+    if (!loadComponent(m_qmlFileUrl)) {
        return;
     }
 }
@@ -227,15 +232,16 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFr
     }
 }
 
-void QmlRenderer::prepareRenderer() 
+void QmlRenderer::prepareRenderer()
 {
+    //TODO: Consider merging with init()
+
     if (m_status == Running) {
         return;
     }
 
     createFbo();
 
-    Q_ASSERT(m_fps!=0);
     m_animationDriver = std::make_unique<QmlAnimationDriver>(1000/m_fps);
     m_animationDriver->install();
     //Q_ASSERT(!m_animationDriver->isRunning());
@@ -245,12 +251,43 @@ void QmlRenderer::prepareRenderer()
 void QmlRenderer::renderQml()
 {
    m_status = Running;
-   if (m_isSingleFrame == true){
+   if (m_ifProducer) {
+       renderToQImage();
+   }
+   else if (m_isSingleFrame){
         renderSingleFrame();
    }
    else {
         renderAllFrames();
    }
+}
+
+void QmlRenderer::renderToQImage()
+{
+    // Render frame
+    m_renderControl->polishItems();
+    m_renderControl->sync();
+    m_renderControl->render();
+
+    m_context->functions()->glFlush();
+    m_currentFrame++;
+
+    watcher = std::make_unique<QFutureWatcher<void>>();
+    connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
+    if(m_currentFrame ==  m_selectFrame) {
+        QImage img = m_fbo->toImage();
+        watcher->setFuture(QtConcurrent::run(saveImage, img, img.width(), img.height(), m_ImageFormat));
+        return;
+    }
+    m_futures.append(std::move(watcher));
+
+    //advance animation
+    m_animationDriver->advance();
+
+    if (m_currentFrame < m_framesCount) {
+        //Schedule the next update
+        QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
+    }
 }
 
 void QmlRenderer::cleanup()
@@ -278,7 +315,7 @@ bool QmlRenderer::checkIfComponentOK()
      if (m_qmlComponent->isError()) {
         const QList<QQmlError> errorList = m_qmlComponent->errors();
         for (const QQmlError &error : errorList)
-            qDebug() << error.url() << error.line() << error;
+            qDebug() <<"QML Component Error: " << error.url() << error.line() << error;
         return false;
      }
     return true;
@@ -352,7 +389,6 @@ void QmlRenderer::futureFinished()
     m_futureFinishedCounter++;
     if (getFutureCount() == (m_framesCount - 1) || m_isSingleFrame) {
         m_status = NotRunning;
-        qDebug() << "OK HERE GOES RENDER DATA!!!!!!!!!!!!!!!! GOD SAVE THE KING";
         getAllParams();
         emit terminate();
     }

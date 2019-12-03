@@ -58,7 +58,7 @@ public:
 
     /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QString, used for QML MLT Producer
     */
-    void initialiseRenderParams(const QString &qmlFileText, bool isSingleFrame=false, qint64 frameTime=0, const QString &outputDirectory = "",  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
+    void initRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame=false, int width = 1280, int height = 720, const QImage::Format imageFormat = QImage::Format_ARGB32_Premultiplied, qint64 frameTime=0, const QString &outputFormat = "jpg", qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
 
     /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QUrl
     */
@@ -130,6 +130,8 @@ public:
     */
     void renderAllFrames();
 
+    void renderToQImage();
+
 
     /* @brief Returns the rendered frame stored in m_frame
     */
@@ -143,9 +145,12 @@ public:
     static void saveImage(const QImage &image, const QString &outputFile)
     {
         m_frame = image;
-        if(!m_ifProducer) {
-            image.save(outputFile); // no need to save frames if it is not for the producer
-        }
+        image.save(outputFile); // no need to save frames if it is not for the producer
+    }
+
+    static void saveImage(const QImage &image, int width, int height, QImage::Format imgFormat)
+    {
+        m_frame = QImage(image.constBits(), width, height, imgFormat); //convert to the non premultiplied, requested format
     }
 
 private:
@@ -206,7 +211,7 @@ private:
     static bool m_ifProducer;  //set true when overloaded initialiseRenderParams() for producer is called
     qint64 m_frameTime;
     bool m_isSingleFrame;
-
+    QImage::Format m_ImageFormat;
 signals:
     void finished(); 
     void terminate(); // can be used by an implementing program to connect with a slot to close the execution
