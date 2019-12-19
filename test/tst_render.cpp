@@ -199,27 +199,21 @@ void Render::test_case7()
     QString libraryOutputDir = QDir::currentPath() + "/../../QmlRenderer/test";
 
     const QString qmlFileUrl = QDir::currentPath() + "/../../QmlRenderer/test/test0.qml";
-    
-    m_renderer->initRenderParams(qmlFileUrl, true, 720, 596, QImage::Format_RGBA8888);
-    m_renderer->getAllParams();
 
-    m_renderer->prepareRenderer();
-    m_renderer->renderQml();
+    //TODO
 
-    // We wait till the signal QmlRenderer::terminate is emitted from the renderer
-    QTimer timer;
-    timer.setSingleShot(true);
-    QEventLoop loop;
-    connect( m_renderer, &QmlRenderer::terminate, &loop, &QEventLoop::quit );
-    connect( &timer, &QTimer::timeout, &loop, &QEventLoop::quit );
-    timer.start(10000);
-    loop.exec();
+    int width = 720;
+    int height = 596;
+    QImage img(width, height, QImage::Format_RGBA8888);
 
-    QImage renderedFrame = QmlRenderer::getFrame();
-    QVERIFY2(renderedFrame.save(libraryOutputDir + "/lib_output/test_output_1.jpg") == true, "Rendered Frame Not Saved");
+    m_renderer->render(img, qmlFileUrl);
 
-    QImage orig_frame = QImage(libraryOutputDir + "/reference_output/output_frame_1.jpg", "jpg");
-    QVERIFY2(orig_frame == renderedFrame, "Rendering error");
+    QVERIFY2(img.save(QDir::homePath() + "/lib_output_frame1.jpg") == true, "Saving Failed");
+    //QVERIFY2(renderedFrame.save(libraryOutputDir + "/lib_output/test_output_1.jpg") == true, "Rendered Frame Not Saved");
+
+    QImage orig_frame = QImage(QFINDTESTDATA("/reference_output/output_frame_1.jpg"));
+    // QImage orig_frame = QImage(libraryOutputDir + "/reference_output/output_frame_1.jpg", "jpg");
+    //QVERIFY2(orig_frame == renderedFrame, "Rendering error");
 
     m_renderer->cleanup();
 }
