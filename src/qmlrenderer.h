@@ -58,7 +58,7 @@ public:
 
     /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QString, used for QML MLT Producer
     */
-    void initRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame=false, int width = 1280, int height = 720, const QImage::Format imageFormat = QImage::Format_ARGB32_Premultiplied, qint64 frameTime=0, const QString &outputFormat = "jpg", qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
+    void initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame=false, int width = 1280, int height = 720, const QImage::Format imageFormat = QImage::Format_ARGB32_Premultiplied, qint64 frameTime=0, const QString &outputFormat = "jpg", qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
 
     /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QUrl
     */
@@ -132,26 +132,20 @@ public:
 
     void renderToQImage();
 
-
-    /* @brief Returns the rendered frame stored in m_frame
-    */
-    static QImage getFrame()
-    {
-        return m_frame;
-    }
-
     /* @brief Called after the future finishes for a frame after rendering to save the frame in the given output directory and format
     */
     static void saveImage(const QImage &image, const QString &outputFile)
     {
-        m_frame = image;
         image.save(outputFile); // no need to save frames if it is not for the producer
     }
 
-    static void saveImage(const QImage &image, int width, int height, QImage::Format imgFormat)
+    void saveQImage(QImage &img)
     {
-        m_frame = QImage(image.constBits(), width, height, imgFormat); //convert to the non premultiplied, requested format
+        img.convertTo(m_ImageFormat);
+        m_frame = img;
     }
+
+    void render(QImage &img, const QUrl inputFile);
 
 private:
     /* @brief Creates the Frame Buffer Object and sets render target to the FBO
@@ -207,16 +201,17 @@ private:
     QString m_outputFile;
     QString m_qmlFileText;
     QUrl m_qmlFileUrl;
-    static QImage m_frame;
-    static bool m_ifProducer;  //set true when overloaded initialiseRenderParams() for producer is called
+    QImage m_frame;
+    bool m_ifProducer;  //set true when render() for producer is called
     qint64 m_frameTime;
     bool m_isSingleFrame;
     QImage::Format m_ImageFormat;
+
 signals:
     void finished(); 
     void terminate(); // can be used by an implementing program to connect with a slot to close the execution
-                      // used by QmlRender (CLI implementation of the lib) and connected with slot to quit the program
-                      // used in test module
+                      // Currently used in QmlRender (CLI implementation of the lib) and connected with slot to quit the program
+                      // Currently used in test module
 
 private slots:
     /* @brief Slot activated when a future finishes, m_futureFinisheCounter is incremented and checks if rendering needs to be stopped, sets m_status to 'NotRunning' and emits terminate()

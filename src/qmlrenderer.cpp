@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <QDebug>
 #include <QQmlEngine>
 
+#include <boost/bind.hpp>
 #include "qmlrenderer.h"
 #include "qmlanimationdriver.h"
 
@@ -54,6 +55,7 @@ QmlRenderer::QmlRenderer(QObject *parent)
     , m_framesCount(0)
     , m_currentFrame(0)
     , m_futureFinishedCounter(0)
+    , m_ifProducer(false)
 {
     QSurfaceFormat format;
     format.setDepthBufferSize(16);
@@ -94,9 +96,6 @@ QmlRenderer::~QmlRenderer()
     m_context->makeCurrent(m_offscreenSurface.get());
     m_context->doneCurrent();
 }
-
-QImage QmlRenderer::m_frame = QImage();
-bool QmlRenderer::m_ifProducer = false;
 
 void QmlRenderer::displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message)
 {
@@ -174,11 +173,27 @@ void QmlRenderer::getAllParams()
     qDebug() << "frame time " << m_frameTime;
 }
 
-
-void QmlRenderer::initRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame, int width, int height,  const QImage::Format imageFormat, qint64 frameTime, const QString &outputFormat, qreal devicePixelRatio, int durationMs, int fps)
+void QmlRenderer::render(QImage &img, const QUrl inputFile)
 {
-    //TODO: remember to remove DURATION Once you confirm that the number of frames is not actually needed by the producer
-    //TODO: write legible tests
+    initialiseRenderParams(inputFile, true, img.width(), img.height(), img.format());
+    prepareRenderer();
+    renderToQImage();
+
+    // Wait till we get terminate()
+    QTimer timer;
+    timer.setSingleShot(true);
+    QEventLoop loop;
+    QObject::connect( this, &QmlRenderer::terminate, &loop, &QEventLoop::quit );
+    QObject::connect( &timer, &QTimer::timeout, &loop, &QEventLoop::quit );
+    timer.start(10000);
+    loop.exec();
+
+    img = m_frame;
+}
+
+void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame, int width, int height,  const QImage::Format imageFormat, qint64 frameTime, const QString &outputFormat, qreal devicePixelRatio, int durationMs, int fps)
+{
+    //TODO: write tests
 
     m_ifProducer = true;
     m_ImageFormat = imageFormat;
@@ -234,8 +249,6 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFr
 
 void QmlRenderer::prepareRenderer()
 {
-    //TODO: Consider merging with init()
-
     if (m_status == Running) {
         return;
     }
@@ -251,10 +264,7 @@ void QmlRenderer::prepareRenderer()
 void QmlRenderer::renderQml()
 {
    m_status = Running;
-   if (m_ifProducer) {
-       renderToQImage();
-   }
-   else if (m_isSingleFrame){
+   if (m_isSingleFrame){
         renderSingleFrame();
    }
    else {
@@ -270,24 +280,15 @@ void QmlRenderer::renderToQImage()
     m_renderControl->render();
 
     m_context->functions()->glFlush();
-    m_currentFrame++;
 
     watcher = std::make_unique<QFutureWatcher<void>>();
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
-    if(m_currentFrame ==  m_selectFrame) {
-        QImage img = m_fbo->toImage();
-        watcher->setFuture(QtConcurrent::run(saveImage, img, img.width(), img.height(), m_ImageFormat));
-        return;
-    }
-    m_futures.append(std::move(watcher));
 
-    //advance animation
-    m_animationDriver->advance();
+    QImage renderedImg = m_fbo->toImage();
 
-    if (m_currentFrame < m_framesCount) {
-        //Schedule the next update
-        QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
-    }
+    QFuture<void> future = QtConcurrent::run(this, &QmlRenderer::saveQImage, renderedImg);
+    watcher->setFuture(future);
+    return;
 }
 
 void QmlRenderer::cleanup()
@@ -387,9 +388,10 @@ bool QmlRenderer::loadQML()
 void QmlRenderer::futureFinished()
 {
     m_futureFinishedCounter++;
-    if (getFutureCount() == (m_framesCount - 1) || m_isSingleFrame) {
+    if (getFutureCount() == (m_framesCount - 1) || m_isSingleFrame || m_ifProducer) {
         m_status = NotRunning;
         getAllParams();
+        cleanup();
         emit terminate();
     }
 }
