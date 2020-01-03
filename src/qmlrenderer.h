@@ -49,16 +49,17 @@ class QMLRENDERERSHARED_EXPORT QmlRenderer: public QObject
 
 public:
     explicit QmlRenderer(QObject *parent = nullptr);
+    explicit QmlRenderer(QString qmlFileUrlString, qint64 frameTime=0, qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, QObject *parent = nullptr);
     ~QmlRenderer() override;
     enum Status {
             NotRunning,
             Initialised,
-            Running
+            Running,
         };
 
     /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QString, used for QML MLT Producer
     */
-    void initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame=false, int width = 1280, int height = 720, const QImage::Format imageFormat = QImage::Format_ARGB32_Premultiplied, qint64 frameTime=0, const QString &outputFormat = "jpg", qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
+    void initialiseRenderParams(int width = 1280, int height = 720, const QImage::Format imageFormat = QImage::Format_ARGB32_Premultiplied);
 
     /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QUrl
     */
@@ -130,7 +131,7 @@ public:
     */
     void renderAllFrames();
 
-    void renderToQImage();
+    QImage renderToQImage();
 
     /* @brief Called after the future finishes for a frame after rendering to save the frame in the given output directory and format
     */
@@ -139,13 +140,19 @@ public:
         image.save(outputFile); // no need to save frames if it is not for the producer
     }
 
-    void saveQImage(QImage &img)
-    {
-        img.convertTo(m_ImageFormat);
-        m_frame = img;
-    }
+    /* @brief Returns true if m_status is 'Running'
+    */
+    bool isRunning();
 
-    void render(QImage &img, const QUrl inputFile);
+    void render(QImage &img);
+
+    void prepareWindow();
+
+    void renderNext();
+
+    void initialiseContext();
+
+    void loadInput();
 
 private:
     /* @brief Creates the Frame Buffer Object and sets render target to the FBO
@@ -164,13 +171,11 @@ private:
     */
     bool loadQML();
 
-    /* @brief Returns true if m_status is 'Running'
-    */
-    bool isRunning();
-
     /* Overriden event() handles the Update requests sent by renderAllFrames() / renderSingleFrame() required for rendering
     */
     bool event(QEvent *event) override;
+
+    bool loadRootObject();
 
     std::unique_ptr<QOpenGLContext> m_context;
     std::unique_ptr<QOffscreenSurface> m_offscreenSurface;
@@ -206,6 +211,7 @@ private:
     qint64 m_frameTime;
     bool m_isSingleFrame;
     QImage::Format m_ImageFormat;
+    bool renderFlag;
 
 signals:
     void finished(); 

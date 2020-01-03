@@ -38,7 +38,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <QDebug>
 #include <QQmlEngine>
 
-#include <boost/bind.hpp>
 #include "qmlrenderer.h"
 #include "qmlanimationdriver.h"
 
@@ -49,13 +48,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
 */
 
+QmlRenderer::QmlRenderer(QString qmlFileUrlString, qint64 frameTime, qreal devicePixelRatio, int durationMs, int fps, QObject *parent)
+    : QObject(parent)
+    , m_status(NotRunning)
+    , m_framesCount(0)
+    , m_currentFrame(0)
+    , m_futureFinishedCounter(0)
+    , m_qmlFileUrl(qmlFileUrlString)
+    , m_dpr(devicePixelRatio)
+    , m_duration(durationMs)
+    , m_fps(fps)
+    , m_frameTime(frameTime)
+    , m_ifProducer(true)
+{
+    m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
+    m_framesCount = (m_duration / 1000 )* m_fps;
+}
+
 QmlRenderer::QmlRenderer(QObject *parent)
     : QObject(parent)
     , m_status(NotRunning)
     , m_framesCount(0)
     , m_currentFrame(0)
     , m_futureFinishedCounter(0)
-    , m_ifProducer(false)
+    , m_ifProducer(true)
 {
     QSurfaceFormat format;
     format.setDepthBufferSize(16);
@@ -84,11 +100,14 @@ QmlRenderer::QmlRenderer(QObject *parent)
     }
 
     m_context->makeCurrent(m_offscreenSurface.get());
+
+    //load Component
     Q_ASSERT(m_context->currentContext()!= nullptr);
     m_renderControl->initialize(m_context.get());
 
     connect(m_quickWindow.get(), SIGNAL(sceneGraphError(QQuickWindow::SceneGraphError, const QString)), this, SLOT(displaySceneGraphError(QQuickWindow::SceneGraphError, const QString)));
     connect(m_qmlEngine.get(), SIGNAL(warnings(QList<QQmlError>)), this, SLOT(displayQmlError(QList<QQmlError>)));
+    renderFlag = false;
 }
 
 QmlRenderer::~QmlRenderer()
@@ -171,56 +190,39 @@ void QmlRenderer::getAllParams()
     qDebug() << "actual frames " << m_currentFrame;
     qDebug() << "calculated frames " << m_framesCount;
     qDebug() << "frame time " << m_frameTime;
+    qDebug() << "size : " << m_size;
 }
 
-void QmlRenderer::render(QImage &img, const QUrl inputFile)
+bool QmlRenderer::isRunning()
 {
-    initialiseRenderParams(inputFile, true, img.width(), img.height(), img.format());
-    prepareRenderer();
-    renderToQImage();
-
-    // Wait till we get terminate()
-    QTimer timer;
-    timer.setSingleShot(true);
-    QEventLoop loop;
-    QObject::connect( this, &QmlRenderer::terminate, &loop, &QEventLoop::quit );
-    QObject::connect( &timer, &QTimer::timeout, &loop, &QEventLoop::quit );
-    timer.start(10000);
-    loop.exec();
-
-    img = m_frame;
+    return m_status == Running;
 }
 
-void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame, int width, int height,  const QImage::Format imageFormat, qint64 frameTime, const QString &outputFormat, qreal devicePixelRatio, int durationMs, int fps)
+void QmlRenderer::initialiseRenderParams(int width, int height, const QImage::Format imageFormat)
 {
     //TODO: write tests
+    if (m_status == NotRunning) {
+        initialiseContext();
 
-    m_ifProducer = true;
-    m_ImageFormat = imageFormat;
-    m_qmlFileUrl = qmlFileUrl;
-    m_size = QSize(width, height);
-    m_dpr = devicePixelRatio;
-    m_duration = durationMs;
-    m_outputFormat = outputFormat;
-    m_isSingleFrame = isSingleFrame;
+        m_size = QSize(width, height);
+        m_ImageFormat = imageFormat;
 
-    m_frameTime = 1000; //hard coded for the time being to test QML files with no animation
-    m_fps = 1;
-    m_duration = 1000;
-
-    Q_ASSERT(m_fps!=0);
-
-    if(isSingleFrame) {
-        m_selectFrame  =  static_cast<int>(m_frameTime / ((1000/m_fps)));
+        loadInput();
+        m_status = Initialised;
     }
+    else if (width == m_size.width() && height == m_size.height() && imageFormat == m_ImageFormat ) {
+        renderFlag = true; // meaning we just advance the animation driver by calling renderNext() since parameters are the same
 
-    m_framesCount = (m_duration / 1000 )* m_fps;
-
-    if (!loadComponent(m_qmlFileUrl)) {
-       return;
+    }
+    else if ( width != m_size.width() || height != m_size.height() || imageFormat != m_ImageFormat ) {
+        m_size = QSize(width, height);
+        m_ImageFormat = imageFormat;
+        cleanup();
+        prepareWindow();
+        prepareRenderer();
+        renderFlag = true;
     }
 }
-
 
 void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame, qint64 frameTime, const QString &filename, const QString &outputDirectory, const QString &outputFormat, const QSize &size, qreal devicePixelRatio, int durationMs, int fps)
 {
@@ -245,70 +247,53 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFr
     if (!loadComponent(m_qmlFileUrl)) {
        return;
     }
+
 }
 
-void QmlRenderer::prepareRenderer()
+
+void QmlRenderer::initialiseContext()
 {
-    if (m_status == Running) {
-        return;
+    QSurfaceFormat format;
+    format.setDepthBufferSize(16);
+    format.setStencilBufferSize(8);
+    m_context = std::make_unique<QOpenGLContext>();
+    m_context->setFormat(format);
+    Q_ASSERT(format.depthBufferSize() == (m_context->format()).depthBufferSize());
+    Q_ASSERT(format.stencilBufferSize() == (m_context->format()).stencilBufferSize());
+    m_context->create();
+    Q_ASSERT(m_context->isValid());
+
+    m_offscreenSurface = std::make_unique<QOffscreenSurface>();
+    m_offscreenSurface->setFormat(m_context->format());
+    m_offscreenSurface->create();
+    Q_ASSERT(m_offscreenSurface->isValid());
+
+    m_renderControl = std::make_unique<QQuickRenderControl>(this);
+    Q_ASSERT(m_renderControl != nullptr);
+    QQmlEngine::setObjectOwnership(m_renderControl.get(), QQmlEngine::CppOwnership);
+    m_quickWindow = std::make_unique<QQuickWindow>(m_renderControl.get());
+    Q_ASSERT(m_quickWindow != nullptr);
+
+    m_qmlEngine = std::make_unique<QQmlEngine>();
+    if (!m_qmlEngine->incubationController()) {
+        m_qmlEngine->setIncubationController(m_quickWindow->incubationController());
     }
 
-    createFbo();
+    m_context->makeCurrent(m_offscreenSurface.get());
+    Q_ASSERT(m_context->currentContext()!= nullptr);
+    m_renderControl->initialize(m_context.get());
+    connect(m_quickWindow.get(), SIGNAL(sceneGraphError(QQuickWindow::SceneGraphError, const QString)), this, SLOT(displaySceneGraphError(QQuickWindow::SceneGraphError, const QString)));
+    connect(m_qmlEngine.get(), SIGNAL(warnings(QList<QQmlError>)), this, SLOT(displayQmlError(QList<QQmlError>)));
 
-    m_animationDriver = std::make_unique<QmlAnimationDriver>(1000/m_fps);
-    m_animationDriver->install();
-    //Q_ASSERT(!m_animationDriver->isRunning());
-    m_status = Initialised;
 }
 
-void QmlRenderer::renderQml()
+void QmlRenderer::loadInput()
 {
-   m_status = Running;
-   if (m_isSingleFrame){
-        renderSingleFrame();
-   }
-   else {
-        renderAllFrames();
-   }
-}
-
-void QmlRenderer::renderToQImage()
-{
-    // Render frame
-    m_renderControl->polishItems();
-    m_renderControl->sync();
-    m_renderControl->render();
-
-    m_context->functions()->glFlush();
-
-    watcher = std::make_unique<QFutureWatcher<void>>();
-    connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
-
-    QImage renderedImg = m_fbo->toImage();
-
-    QFuture<void> future = QtConcurrent::run(this, &QmlRenderer::saveQImage, renderedImg);
-    watcher->setFuture(future);
-    return;
-}
-
-void QmlRenderer::cleanup()
-{
-    m_animationDriver->uninstall();
-    m_animationDriver.reset();
-    destroyFbo();
-}
-
-void QmlRenderer::createFbo()
-{
-    m_fbo = std::make_unique<QOpenGLFramebufferObject>(m_size * m_dpr, QOpenGLFramebufferObject::CombinedDepthStencil);
-    Q_ASSERT(m_fbo != nullptr);
-    m_quickWindow->setRenderTarget(m_fbo.get());
-    Q_ASSERT(m_quickWindow->renderTarget() != nullptr && m_quickWindow != nullptr);
-}
-
-void QmlRenderer::destroyFbo()
-{
-    m_fbo.reset();
+    m_qmlComponent = std::make_unique<QQmlComponent>(m_qmlEngine.get(), QUrl(m_qmlFileUrl), QQmlComponent::PreferSynchronous);
+    Q_ASSERT(!m_qmlComponent->isNull() || m_qmlComponent->isReady());
+    Q_ASSERT(loadRootObject());
+    prepareWindow();
+    prepareRenderer();
 }
 
 bool QmlRenderer::checkIfComponentOK()
@@ -320,6 +305,64 @@ bool QmlRenderer::checkIfComponentOK()
         return false;
      }
     return true;
+}
+
+bool QmlRenderer::loadRootObject()
+{
+    if(!checkIfComponentOK()) {
+        return false;
+    }
+    Q_ASSERT(m_qmlComponent->create() != nullptr);
+    m_rootObject.reset(m_qmlComponent->create());
+    QQmlEngine::setObjectOwnership(m_rootObject.get(), QQmlEngine::CppOwnership);
+    Q_ASSERT(m_rootObject);
+    if(!checkIfComponentOK()) {
+        return false;
+    }
+
+    m_rootItem.reset(qobject_cast<QQuickItem*>(m_rootObject.get()));
+
+    if (!m_rootItem) {
+        qDebug()<< "ERROR - run: Not a QQuickItem - QML file INVALID ";
+        m_rootObject.reset();
+        return false;
+    }
+    m_rootItem->setParentItem(m_quickWindow->contentItem());
+    return true;
+}
+
+void QmlRenderer::prepareWindow()
+{
+    // The root item is ready. Associate it with the window.
+    Q_ASSERT(!m_size.isEmpty());
+    m_rootItem->setWidth(m_size.width());
+    m_rootItem->setHeight(m_size.height());
+    m_quickWindow->setGeometry(0, 0, m_size.width(), m_size.height());
+}
+
+void QmlRenderer::prepareRenderer()
+{
+    createFbo();
+
+    // Installing Animation driver
+    Q_ASSERT(m_fps>0);
+    m_animationDriver = std::make_unique<QmlAnimationDriver>(1000/m_fps);
+    m_animationDriver->install();
+}
+
+void QmlRenderer::createFbo()
+{
+    Q_ASSERT(!m_size.isEmpty());
+    Q_ASSERT(m_dpr != 0.0);
+
+    m_fbo = std::make_unique<QOpenGLFramebufferObject>(m_size * m_dpr, QOpenGLFramebufferObject::CombinedDepthStencil);
+    Q_ASSERT(m_fbo != nullptr);
+    m_quickWindow->setRenderTarget(m_fbo.get());
+    Q_ASSERT(m_quickWindow->isSceneGraphInitialized());
+    Q_ASSERT(m_quickWindow->renderTarget() != nullptr && m_quickWindow != nullptr);
+
+    Q_ASSERT(m_context->makeCurrent(m_offscreenSurface.get()));
+
 }
 
 bool QmlRenderer::loadComponent(const QUrl &qmlFileUrl)
@@ -338,7 +381,8 @@ bool QmlRenderer::loadComponent(const QUrl &qmlFileUrl)
     return true;
 }
 
-bool QmlRenderer::loadComponent(const QString &qmlFileText)
+// When a QML file is not directly supplied, but the content within it is
+bool QmlRenderer::loadComponent(const QString &qmlFileText) // TODO : Make a temporary file, store the QmlFileText and then feed it to create QmlComponent
 {
     if (m_qmlComponent != nullptr) {
         m_qmlComponent.reset();
@@ -376,24 +420,48 @@ bool QmlRenderer::loadQML()
         return false;
     }
 
-    // The root item is ready. Associate it with the window.
-    m_rootItem->setParentItem(m_quickWindow->contentItem());
-    m_rootItem->setWidth(m_size.width());
-    m_rootItem->setHeight(m_size.height());
+    prepareWindow();
 
-    m_quickWindow->setGeometry(0, 0, m_size.width(), m_size.height());
     return true;
 }
 
-void QmlRenderer::futureFinished()
+void QmlRenderer::render(QImage &img)
 {
-    m_futureFinishedCounter++;
-    if (getFutureCount() == (m_framesCount - 1) || m_isSingleFrame || m_ifProducer) {
-        m_status = NotRunning;
-        getAllParams();
-        cleanup();
-        emit terminate();
-    }
+    QImage frame = renderToQImage();
+    memcpy(img.scanLine(0), frame.constBits(), img.width() * img.height()*4); // Don't alter buffer
+}
+
+QImage QmlRenderer::renderToQImage()
+{
+    if (renderFlag == true )
+        renderNext();
+    // m_status = Running;
+    m_renderControl->polishItems();
+    m_renderControl->sync();
+    m_renderControl->render();
+    m_context->functions()->glFlush();
+
+    QImage renderedImg = m_fbo->toImage();
+    renderedImg.convertTo(m_ImageFormat);
+
+    return renderedImg;
+}
+
+void QmlRenderer::renderNext()
+{
+    m_animationDriver->advance();
+    QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
+}
+
+void QmlRenderer::renderQml()
+{
+   m_status = Running;
+   if (m_isSingleFrame){
+        renderSingleFrame();
+   }
+   else {
+        renderAllFrames();
+   }
 }
 
 void QmlRenderer::renderAllFrames()
@@ -424,26 +492,6 @@ void QmlRenderer::renderAllFrames()
     }
 }
 
-bool QmlRenderer::event(QEvent *event)
-{
-    if (event->type() == QEvent::UpdateRequest) {
-        if(m_isSingleFrame == true) {
-            renderSingleFrame();
-            return true;
-        }
-        else {
-            renderAllFrames();
-            return true;
-        }
-    }
-    return QObject::event(event);
-}
-
-bool QmlRenderer::isRunning()
-{
-    return m_status == Running;
-}
-
 void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames without saving frames till the required frame is reached
 {
     // Render frame
@@ -472,3 +520,50 @@ void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames with
         QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
     }
 }
+
+
+bool QmlRenderer::event(QEvent *event)
+{
+    if (event->type() == QEvent::UpdateRequest) {
+        if(m_isSingleFrame == true) {
+            renderSingleFrame();
+            return true;
+        }
+        else if (m_ifProducer == true) {
+            renderToQImage();
+            renderFlag = false;
+            return true;
+        }
+        else {
+            renderAllFrames();
+            return true;
+        }
+    }
+    return QObject::event(event);
+}
+
+void QmlRenderer::futureFinished()
+{
+    m_futureFinishedCounter++;
+    if (getFutureCount() == (m_framesCount - 1) || m_isSingleFrame || m_ifProducer) {
+        m_status = NotRunning;
+        getAllParams();
+        cleanup();
+        emit terminate();
+    }
+}
+
+void QmlRenderer::cleanup()
+{
+    m_animationDriver->uninstall();
+    m_animationDriver.reset();
+    destroyFbo();
+    m_rootItem->resetWidth();
+    m_rootItem->resetHeight();
+}
+
+void QmlRenderer::destroyFbo()
+{
+    m_fbo.reset();
+}
+
