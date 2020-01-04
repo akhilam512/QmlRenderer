@@ -57,10 +57,6 @@ public:
             Running,
         };
 
-    /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QString, used for QML MLT Producer
-    */
-    void initialiseRenderParams(int width = 1280, int height = 720, const QImage::Format imageFormat = QImage::Format_ARGB32_Premultiplied);
-
     /* @brief Initialises the render parameters - overloaded: loads a QML file template passed as a QUrl
     */
     void initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFrame=false, qint64 frameTime=0, const QString &outputDirectory = "",  const QString &filename = "output_frame", const QString &outputFormat = "jpg", const QSize &size = QSize(1280, 720), qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24);
@@ -73,9 +69,6 @@ public:
     */
     bool loadComponent(const QString &qmlFileText); // over loaded - used for MLT QML producer
 
-    /* @brief Sets m_status to 'Initialised', creates FBO, installs animation driver
-    */
-    void prepareRenderer();
 
     /* @brief Uninstalls the animation driver, destroys FBO
      * @description cleanup() must be called by the program using QmlRenderer library seperately
@@ -131,13 +124,11 @@ public:
     */
     void renderAllFrames();
 
-    QImage renderToQImage();
-
     /* @brief Called after the future finishes for a frame after rendering to save the frame in the given output directory and format
     */
     static void saveImage(const QImage &image, const QString &outputFile)
     {
-        image.save(outputFile); // no need to save frames if it is not for the producer
+        image.save(outputFile);
     }
 
     /* @brief Returns true if m_status is 'Running'
@@ -146,15 +137,12 @@ public:
 
     void render(QImage &img);
 
-    void prepareWindow();
-
-    void renderNext();
-
-    void initialiseContext();
-
     void loadInput();
 
 private:
+
+    void initImageParams(int width = 1280, int height = 720, QImage::Format image_format = QImage::Format_ARGB32_Premultiplied);
+
     /* @brief Creates the Frame Buffer Object and sets render target to the FBO
     */
     void createFbo();
@@ -176,6 +164,18 @@ private:
     bool event(QEvent *event) override;
 
     bool loadRootObject();
+
+    void prepareWindow();
+
+    /* @brief Sets m_status to 'Initialised', creates FBO, installs animation driver
+    */
+    void prepareRenderer();
+
+    QImage renderToQImage();
+
+    void renderNext();
+
+    void initialiseContext();
 
     std::unique_ptr<QOpenGLContext> m_context;
     std::unique_ptr<QOffscreenSurface> m_offscreenSurface;
@@ -216,8 +216,8 @@ private:
 signals:
     void finished(); 
     void terminate(); // can be used by an implementing program to connect with a slot to close the execution
-                      // Currently used in QmlRender (CLI implementation of the lib) and connected with slot to quit the program
-                      // Currently used in test module
+                      // * Currently used in QmlRender (CLI implementation of the lib) and connected with slot to quit the program
+                      // * Currently used in test module
 
 private slots:
     /* @brief Slot activated when a future finishes, m_futureFinisheCounter is incremented and checks if rendering needs to be stopped, sets m_status to 'NotRunning' and emits terminate()

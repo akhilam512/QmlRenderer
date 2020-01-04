@@ -34,9 +34,6 @@ public:
     ~QmlRender();
 
     std::unique_ptr<QmlRenderer> renderer;
-
-private slots:
-    void slotTerminate();
 };
 
 #endif // QMLRENDER_H

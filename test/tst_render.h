@@ -36,6 +36,8 @@ class Render : public QObject
 public:
     Render();
     ~Render();
+    QString libDir;
+    QString refDir;
 
 private slots:
     void test_case1();
@@ -45,5 +47,7 @@ private slots:
     void test_case5();
     void test_case6();
     void test_case7();
+    void test_case8();
+    void test_case9();
 };
 #endif // TST_RENDER_H

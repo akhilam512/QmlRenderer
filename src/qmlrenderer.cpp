@@ -41,13 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "qmlrenderer.h"
 #include "qmlanimationdriver.h"
 
-/*
- * Note:
- * 1 - It is the responsbility of the implementing program to call cleanup(). The program can
- *     do this by catching the terminate() signal and connecting it to a slot.
- *
-*/
-
 QmlRenderer::QmlRenderer(QString qmlFileUrlString, qint64 frameTime, qreal devicePixelRatio, int durationMs, int fps, QObject *parent)
     : QObject(parent)
     , m_status(NotRunning)
@@ -71,7 +64,7 @@ QmlRenderer::QmlRenderer(QObject *parent)
     , m_framesCount(0)
     , m_currentFrame(0)
     , m_futureFinishedCounter(0)
-    , m_ifProducer(true)
+    , m_ifProducer(false)
 {
     QSurfaceFormat format;
     format.setDepthBufferSize(16);
@@ -198,7 +191,7 @@ bool QmlRenderer::isRunning()
     return m_status == Running;
 }
 
-void QmlRenderer::initialiseRenderParams(int width, int height, const QImage::Format imageFormat)
+void QmlRenderer::initImageParams(int width, int height, const QImage::Format imageFormat)
 {
     //TODO: write tests
     if (m_status == NotRunning) {
@@ -243,10 +236,10 @@ void QmlRenderer::initialiseRenderParams(const QUrl &qmlFileUrl, bool isSingleFr
     }
 
     m_framesCount = (m_duration / 1000 )* m_fps;
-
     if (!loadComponent(m_qmlFileUrl)) {
        return;
     }
+    m_status = Initialised;
 
 }
 
@@ -333,7 +326,6 @@ bool QmlRenderer::loadRootObject()
 
 void QmlRenderer::prepareWindow()
 {
-    // The root item is ready. Associate it with the window.
     Q_ASSERT(!m_size.isEmpty());
     m_rootItem->setWidth(m_size.width());
     m_rootItem->setHeight(m_size.height());
@@ -360,9 +352,7 @@ void QmlRenderer::createFbo()
     m_quickWindow->setRenderTarget(m_fbo.get());
     Q_ASSERT(m_quickWindow->isSceneGraphInitialized());
     Q_ASSERT(m_quickWindow->renderTarget() != nullptr && m_quickWindow != nullptr);
-
     Q_ASSERT(m_context->makeCurrent(m_offscreenSurface.get()));
-
 }
 
 bool QmlRenderer::loadComponent(const QUrl &qmlFileUrl)
@@ -419,14 +409,17 @@ bool QmlRenderer::loadQML()
         m_rootObject.reset();
         return false;
     }
-
+    // The root item is ready. Associate it with the window.
+    m_rootItem->setParentItem(m_quickWindow->contentItem());
     prepareWindow();
+    prepareRenderer();
 
     return true;
 }
 
 void QmlRenderer::render(QImage &img)
 {
+    initImageParams(img.width(), img.height(), img.format());
     QImage frame = renderToQImage();
     memcpy(img.scanLine(0), frame.constBits(), img.width() * img.height()*4); // Don't alter buffer
 }
@@ -479,12 +472,12 @@ void QmlRenderer::renderAllFrames()
     watcher = std::make_unique<QFutureWatcher<void>>();
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
     watcher->setFuture(QtConcurrent::run(saveImage, m_fbo->toImage(), m_outputFile));
-    m_futures.append((std::move(watcher)));
+    m_futures.append(std::move(watcher));
     //Q_ASSERT(m_futures.back()->isRunning()); // make sure the last future is running
 
     //Advance animation
     m_animationDriver->advance();
-    Q_ASSERT(m_animationDriver->isRunning());
+    //Q_ASSERT(m_animationDriver->isRunning());
 
     if (m_currentFrame < m_framesCount) {
         //Schedule the next update
@@ -502,7 +495,6 @@ void QmlRenderer::renderSingleFrame()  //  CURRENT APPROACH : render frames with
     m_context->functions()->glFlush();
 
     m_currentFrame++;
-
     m_outputFile =  QString(m_outputDirectory + QDir::separator() + m_outputName + "_" + QString::number(m_currentFrame) + "." + m_outputFormat);
     watcher = std::make_unique<QFutureWatcher<void>>();
     connect(watcher.get(), SIGNAL(finished()), this, SLOT(futureFinished()));
@@ -535,6 +527,9 @@ bool QmlRenderer::event(QEvent *event)
             return true;
         }
         else {
+            if(m_status == NotRunning) {
+                return  QObject::event(event);
+            }
             renderAllFrames();
             return true;
         }
@@ -545,9 +540,8 @@ bool QmlRenderer::event(QEvent *event)
 void QmlRenderer::futureFinished()
 {
     m_futureFinishedCounter++;
-    if (getFutureCount() == (m_framesCount - 1) || m_isSingleFrame || m_ifProducer) {
+    if (getFutureCount() == (m_framesCount) || m_isSingleFrame || m_ifProducer) {
         m_status = NotRunning;
-        getAllParams();
         cleanup();
         emit terminate();
     }
