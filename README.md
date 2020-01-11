@@ -28,3 +28,4 @@ cd bin
 
 ./QmlRender --help
 
+**Note** - This is a GitHub mirror (which I try to update then and now). You can always find the latest QmlRenderer [here](https://cgit.kde.org/scratch/akhilkgangadharan/QmlRenderer.git/)
