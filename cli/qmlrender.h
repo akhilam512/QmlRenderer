@@ -30,10 +30,13 @@ class QmlRender : public QObject
     Q_OBJECT
 
 public:
-    explicit QmlRender(QObject *parent = nullptr);
+    explicit QmlRender(QString filename, QObject *parent = nullptr);
     ~QmlRender();
 
     std::unique_ptr<QmlRenderer> renderer;
+private:
+    QString m_filename;
+
 };
 
 #endif // QMLRENDER_H
