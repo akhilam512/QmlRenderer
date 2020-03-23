@@ -21,14 +21,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "qmlrender.h"
 
-QmlRender::QmlRender(QObject *parent)
+QmlRender::QmlRender(QString filename, QObject *parent)
     : QObject(parent)
+    , m_filename(filename)
 {
-    renderer = std::make_unique<QmlRenderer>(new QmlRenderer);
-    connect(renderer.get(), &QmlRenderer::terminate, this, [] (){
-                                                                    qDebug() << "Done.";
-                                                                    exit(0);
-                                                                 });
+    renderer = std::make_unique<QmlRenderer>(filename);
 }
 
 QmlRender::~QmlRender()
