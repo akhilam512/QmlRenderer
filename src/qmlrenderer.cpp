@@ -18,56 +18,228 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-
-#include <QOpenGLContext>
-#include <QOpenGLFunctions>
-#include <QOpenGLFramebufferObject>
-#include <QOpenGLShaderProgram>
-#include <QOpenGLVertexArrayObject>
-#include <QOpenGLBuffer>
-#include <QOpenGLVertexArrayObject>
-#include <QOffscreenSurface>
-#include <QScreen>
-#include <QQmlComponent>
-#include <QQuickItem>
-#include <QQuickRenderControl>
-#include <QCoreApplication>
-#include <QEvent>
-#include <QtConcurrent/QtConcurrent>
-#include <memory>
-#include <QDebug>
-#include <QQmlEngine>
-
 #include "qmlrenderer.h"
-#include "qmlanimationdriver.h"
-#include "corerenderer.h"
+#include <QEvent>
 
-QmlRenderer::QmlRenderer(QString qmlFileUrlString, qint64 frameTime, qreal devicePixelRatio, int durationMs, int fps, QObject *parent)
-    : QObject(parent)
-    , m_status(NotRunning)
-    , m_qmlFileUrl(qmlFileUrlString)
-    , m_frameTime(frameTime)
-    , m_dpr(devicePixelRatio)
-    , m_duration(durationMs)
-    , m_fps(fps)
-    , m_framesCount(0)
-    , m_currentFrame(0)
-{
-    m_selectFrame =  static_cast<int>(m_frameTime / ((1000/m_fps)));
-    m_framesCount = (m_duration / 1000 )* m_fps;
 
-    initialiseContext();
-}
+QmlRenderer::QmlRenderer(QString qmlFileUrlString, int fps, int duration, qint64 frameTime, qreal devicePixelRatio, QObject *parent)
+        : QObject(parent)
+        , m_fbo(nullptr)
+        , m_animationDriver(nullptr)
+        , m_offscreenSurface(nullptr)
+        , m_context(nullptr)
+        , m_quickWindow(nullptr)
+        , m_renderControl(nullptr)
+        , m_rootItem(nullptr)
+        , m_corerenderer(nullptr)
+        , m_qmlComponent(nullptr)
+        , m_qmlEngine(nullptr)
+        , m_status(NotRunning)
+        , m_qmlFileUrl(qmlFileUrlString)
+        , m_dpr(devicePixelRatio)
+        , m_duration(duration)
+        , m_fps(fps)
+        , m_framesCount(0)
+        , m_currentFrame(0)
+        , m_quickInitialized(false)
+        , m_psrRequested(false)
+        , m_imageReady(false)
+    {
+        m_framesCount = m_duration* m_fps;
+
+        initialiseContext();
+    }
 
 QmlRenderer::~QmlRenderer()
 {
-    m_corerenderer->mutex()->lock();
-    m_corerenderer->requestStop();
-    m_corerenderer->cond()->wait(m_corerenderer->mutex());
-    m_corerenderer->mutex()->unlock();
 
-    m_rendererThread->quit();
-    m_rendererThread->wait();
+        m_corerenderer->mutex()->lock();
+        m_corerenderer->requestStop();
+        m_corerenderer->cond()->wait(m_corerenderer->mutex());
+        m_corerenderer->mutex()->unlock();
+
+        m_rendererThread->quit();
+        m_rendererThread->wait();
+    /*
+        bool ok = m_context->makeCurrent(m_offscreenSurface);
+        qDebug() << " debug == " << ok;
+        delete m_renderControl;
+        delete m_qmlComponent;
+        delete m_quickWindow;
+        delete m_qmlEngine;
+        delete m_fbo;
+
+        m_context->doneCurrent();
+
+        delete m_offscreenSurface;
+        delete m_context;
+*/
+//qDebug() << " HERE??? in destructor!!!!!!!!!";
+        m_context->makeCurrent(m_offscreenSurface);
+        m_renderControl->invalidate();
+        delete m_fbo;
+        m_fbo = nullptr;
+
+        m_context->doneCurrent();
+
+        m_animationDriver->uninstall();
+
+}
+
+bool QmlRenderer::event(QEvent *event)
+{
+  //  qDebug() << " ------------- QmlRenderer event hanlder --------- ";
+    if(event->type() == UPDATE) {
+        renderStatic();
+        m_psrRequested = false;
+        return true;
+    }
+    else if(event->type() == QEvent::UpdateRequest) {
+  //      qDebug() << "Event recived ===== Update Request! ";
+        renderAnimated();
+        return true;
+    }
+    return QObject::event(event);
+}
+
+void QmlRenderer::init(int width, int height, QImage::Format imageFormat)
+    {
+        if (m_status == NotRunning) {
+
+            m_size = QSize(width, height);
+            m_ImageFormat = imageFormat;
+            m_corerenderer->setSize(m_size);
+            m_corerenderer->setFormat(m_ImageFormat);
+            loadInput();
+            m_corerenderer->requestInit();
+            m_quickInitialized = true;
+            m_status = Initialised;
+        }
+        //TODO : W/H/Format update case?
+    }
+
+void QmlRenderer::loadInput()
+{
+    m_qmlComponent = new QQmlComponent(m_qmlEngine, QUrl(m_qmlFileUrl), QQmlComponent::PreferSynchronous);
+    Q_ASSERT(!m_qmlComponent->isNull() || m_qmlComponent->isReady());
+    bool assert = loadRootObject();
+    Q_ASSERT(assert);
+    Q_ASSERT(!m_size.isEmpty());
+    m_rootItem->setWidth(m_size.width());
+    m_rootItem->setHeight(m_size.height());
+    m_quickWindow->setGeometry(0, 0, m_size.width(), m_size.height());
+}
+
+void QmlRenderer::createFbo()
+    {
+        Q_ASSERT(!m_size.isEmpty());
+        Q_ASSERT(m_dpr != 0.0);
+        m_fbo = new QOpenGLFramebufferObject(m_size * m_dpr, QOpenGLFramebufferObject::CombinedDepthStencil);
+        Q_ASSERT(m_fbo != nullptr);
+        m_quickWindow->setRenderTarget(m_fbo);
+        Q_ASSERT(m_quickWindow->isSceneGraphInitialized());
+        Q_ASSERT(m_quickWindow->renderTarget() != nullptr && m_quickWindow != nullptr);
+    }
+
+bool QmlRenderer::loadRootObject()
+    {
+        if(!checkQmlComponent()) {
+            return false;
+        }
+        Q_ASSERT(m_qmlComponent->create() != nullptr);
+        QObject *rootObject = m_qmlComponent->create();
+        QQmlEngine::setObjectOwnership(rootObject, QQmlEngine::CppOwnership);
+        Q_ASSERT(rootObject);
+        if(!checkQmlComponent()) {
+            return false;
+        }
+        m_rootItem = qobject_cast<QQuickItem*>(rootObject);
+        if (!m_rootItem) {
+            qDebug()<< "ERROR - run: Not a QQuickItem - QML file INVALID ";
+            delete rootObject;
+            return false;
+        }
+        m_rootItem->setParentItem(m_quickWindow->contentItem());
+        return true;
+    }
+
+bool QmlRenderer::checkQmlComponent()
+{
+    if (m_qmlComponent->isError()) {
+        const QList<QQmlError> errorList = m_qmlComponent->errors();
+        for (const QQmlError &error : errorList) {
+            qDebug() <<"QML Component Error: " << error.url() << error.line() << error;
+        }
+        return false;
+    }
+    return true;
+}
+
+QImage QmlRenderer::render(int width, int height, QImage::Format format)
+{
+    init(width, height, format);
+    return renderStatic();
+}
+
+QImage QmlRenderer::renderStatic()
+    {
+        // Polishing happens on the main thread
+        m_renderControl->polishItems();
+        // Sync happens on the render thread with the main thread (this one) blocked
+        QMutexLocker lock(m_corerenderer->mutex());
+        m_corerenderer->requestRender();
+        // Wait until sync is complete
+        m_corerenderer->cond()->wait(m_corerenderer->mutex());
+        return m_corerenderer->getRenderedQImage();
+    }
+
+QImage QmlRenderer::render(int width, int height, QImage::Format format, int frame)
+{
+    m_requestedFrame = frame;
+    m_currentFrame = 0;
+    m_imageReady = false;
+    init(width, height, format);
+
+    QEventLoop loop;
+    connect(this, &QmlRenderer::imageReady, &loop, &QEventLoop::quit, Qt::QueuedConnection);
+    renderAnimated();
+    loop.exec();
+
+    return m_img;
+}
+
+void QmlRenderer::renderAnimated()
+{
+//    qDebug() <<" ----------- renderAnimated() called ----------- \n";
+    // Polishing happens on the main thread
+    m_renderControl->polishItems();
+    // Sync happens on the render thread with the main thread (this one) blocked
+    QMutexLocker lock(m_corerenderer->mutex());
+ //   qDebug() << " Mutex Locked!!!";
+    //m_img = m_corerenderer->asyncRender();
+    m_corerenderer->requestRender();
+    // Wait until sync & render is complete
+    m_corerenderer->cond()->wait(m_corerenderer->mutex());
+//	lock.unlock();
+    if (m_currentFrame == m_requestedFrame) {
+        m_imageReady = true;
+        m_img =  m_corerenderer->getRenderedQImage();
+        emit imageReady();
+        return;
+    }
+    if (m_currentFrame < m_framesCount) {
+     //   qDebug() << " OK SENDING EVENT!\n";
+     //   qDebug() << " ANIM DRIVER : ELAPSED : " << m_animationDriver->elapsed();
+        m_currentFrame++;
+        m_animationDriver->advance();
+        QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
+    }
+    else {
+
+        return;
+    }
+    //	QCoreApplication::processEvents();
+
 }
 
 void QmlRenderer::initialiseContext()
@@ -75,165 +247,74 @@ void QmlRenderer::initialiseContext()
     QSurfaceFormat format;
     format.setDepthBufferSize(16);
     format.setStencilBufferSize(8);
-    m_context = std::make_shared<QOpenGLContext>();
+    m_context = new QOpenGLContext();
     m_context->setFormat(format);
     Q_ASSERT(format.depthBufferSize() == (m_context->format()).depthBufferSize());
     Q_ASSERT(format.stencilBufferSize() == (m_context->format()).stencilBufferSize());
     m_context->create();
     Q_ASSERT(m_context->isValid());
 
-    m_offscreenSurface = std::make_shared<QOffscreenSurface>();
+    m_offscreenSurface = new QOffscreenSurface();
     m_offscreenSurface->setFormat(m_context->format());
     m_offscreenSurface->create();
     Q_ASSERT(m_offscreenSurface->isValid());
 
-    m_renderControl = std::make_shared<QQuickRenderControl>(this);
+    m_renderControl = new QQuickRenderControl(this);
     Q_ASSERT(m_renderControl != nullptr);
-    QQmlEngine::setObjectOwnership(m_renderControl.get(), QQmlEngine::CppOwnership);
+    QQmlEngine::setObjectOwnership(m_renderControl, QQmlEngine::CppOwnership);
 
-    m_quickWindow = std::make_shared<QQuickWindow>(m_renderControl.get());
+    m_quickWindow = new QQuickWindow(m_renderControl);
     Q_ASSERT(m_quickWindow != nullptr);
 
-    m_qmlEngine = std::make_unique<QQmlEngine>();
+    m_qmlEngine = new QQmlEngine();
     if (!m_qmlEngine->incubationController()) {
         m_qmlEngine->setIncubationController(m_quickWindow->incubationController());
     }
 
-    m_corerenderer = std::make_unique<CoreRenderer>();
+    m_corerenderer = new QmlCoreRenderer();
     m_corerenderer->setContext(m_context);
-
     m_corerenderer->setSurface(m_offscreenSurface);
     m_corerenderer->setQuickWindow(m_quickWindow);
     m_corerenderer->setRenderControl(m_renderControl);
-
-    m_corerenderer->setFPS(m_fps);
     m_corerenderer->setDPR(m_dpr);
 
     m_rendererThread = new QThread;
-
     m_renderControl->prepareThread(m_rendererThread);
+    m_animationDriver = new QmlAnimationDriver(1000/m_fps);
+    m_animationDriver->install();
+    m_corerenderer->setFPS(m_fps);
+    m_corerenderer->setAnimationDriver(m_animationDriver);
 
     m_context->moveToThread(m_rendererThread);
     m_corerenderer->moveToThread(m_rendererThread);
-
     m_rendererThread->start();
 
-    connect(m_quickWindow.get(), SIGNAL(sceneGraphError(QQuickWindow::SceneGraphError, const QString)), this, SLOT(displaySceneGraphError(QQuickWindow::SceneGraphError, const QString)));
-    connect(m_qmlEngine.get(), SIGNAL(warnings(QList<QQmlError>)), this, SLOT(displayQmlError(QList<QQmlError>)));
+
+
+    connect(
+        m_quickWindow, &QQuickWindow::sceneGraphError,
+        [=]( QQuickWindow::SceneGraphError error, const QString &message) {
+            qDebug() << "!!!!!!!! ERROR - QML Scene Graph: " << error << message;
+            }
+    );
+    connect(
+        m_qmlEngine, &QQmlEngine::warnings,
+        [=]( QList<QQmlError> warnings) {
+            foreach(const QQmlError& warning, warnings) {
+                qDebug() << "!!!! QML WARNING : "  << warning << "  " ;
+            }
+        }
+    );
+    connect(m_renderControl, &QQuickRenderControl::renderRequested, this, &QmlRenderer::requestUpdate);
+    connect(m_renderControl, &QQuickRenderControl::sceneChanged, this, &QmlRenderer::requestUpdate);
 }
 
-bool QmlRenderer::checkQmlComponent()
+void QmlRenderer::requestUpdate()
 {
-     if (m_qmlComponent->isError()) {
-        const QList<QQmlError> errorList = m_qmlComponent->errors();
-        for (const QQmlError &error : errorList)
-            qDebug() <<"QML Component Error: " << error.url() << error.line() << error;
-        return false;
-     }
-    return true;
-}
 
-bool QmlRenderer::loadRootObject()
-{
-    if(!checkQmlComponent()) {
-        return false;
-    }
-    Q_ASSERT(m_qmlComponent->create() != nullptr);
-    m_rootObject.reset(m_qmlComponent->create());
-    QQmlEngine::setObjectOwnership(m_rootObject.get(), QQmlEngine::CppOwnership);
-    Q_ASSERT(m_rootObject);
-    if(!checkQmlComponent()) {
-        return false;
-    }
-
-    m_rootItem.reset(qobject_cast<QQuickItem*>(m_rootObject.get()));
-
-    if (!m_rootItem) {
-        qDebug()<< "ERROR - run: Not a QQuickItem - QML file INVALID ";
-        m_rootObject.reset();
-        return false;
-    }
-    m_rootItem->setParentItem(m_quickWindow->contentItem());
-    return true;
-}
-
-void QmlRenderer::createFbo()
-{
-    Q_ASSERT(!m_size.isEmpty());
-    Q_ASSERT(m_dpr != 0.0);
-    m_fbo = std::make_unique<QOpenGLFramebufferObject>(m_size * m_dpr, QOpenGLFramebufferObject::CombinedDepthStencil);
-    Q_ASSERT(m_fbo != nullptr);
-    m_quickWindow->setRenderTarget(m_fbo.get());
-    Q_ASSERT(m_quickWindow->isSceneGraphInitialized());
-    Q_ASSERT(m_quickWindow->renderTarget() != nullptr && m_quickWindow != nullptr);
-}
-
-void QmlRenderer::loadInput()
-{
-    m_qmlComponent = std::make_unique<QQmlComponent>(m_qmlEngine.get(), QUrl(m_qmlFileUrl), QQmlComponent::PreferSynchronous);
-    Q_ASSERT(!m_qmlComponent->isNull() || m_qmlComponent->isReady());
-    bool assert = loadRootObject();
-    Q_ASSERT(assert);
-
-    Q_ASSERT(!m_size.isEmpty());
-    m_rootItem->setWidth(m_size.width());
-    m_rootItem->setHeight(m_size.height());
-    m_quickWindow->setGeometry(0, 0, m_size.width(), m_size.height());
-}
-
-void QmlRenderer::init(int width, int height, const QImage::Format imageFormat)
-{
-    if (m_status == NotRunning) {
-        m_size = QSize(width, height);
-        m_ImageFormat = imageFormat;
-        m_corerenderer->setSize(m_size);
-        m_corerenderer->setFormat(m_ImageFormat);
-        loadInput();
-        m_corerenderer->requestInit();
-        m_status = Initialised;
-    }
-    //TODO: Fix crash caused from code below
-    /*
-    else if ( width != m_size.width() || height != m_size.height() || imageFormat != m_ImageFormat ) {
-        qDebug() << " HEIGHT AND WIDTH CHANGED111 !!!! !! \;n \n ";
-        m_size = QSize(width, height);
-        m_ImageFormat = imageFormat;
-        m_corerenderer->requestStop();
-        loadInput();
-        m_corerenderer->requestInit();
-        m_status = Initialised;
-    }
-    */
-}
-
-QImage QmlRenderer::renderToQImage()
-{
-    // Polishing happens on the main thread
-    m_renderControl->polishItems();
-    // Sync happens on the render thread with the main thread (this one) blocked
-    QMutexLocker lock(m_corerenderer->mutex());
-    m_corerenderer->requestRender();
-    // Wait until sync is complete
-    m_corerenderer->cond()->wait(m_corerenderer->mutex());
-
-    return m_corerenderer->image;
-}
-
-
-QImage QmlRenderer::render(int width, int height, QImage::Format format)
-{
-    init(width, height, format);
-    return renderToQImage();
-}
-
-void QmlRenderer::displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message)
-{
-    qDebug() << "!!!!!!! ERROR : QML Scene Graph " << error << message;
-}
-
-void QmlRenderer::displayQmlError(QList<QQmlError> errors)
-{
-    foreach(const QQmlError& error, errors) {
-        qDebug() << "!!!!!!!! QML ERROR : "  << error << "  " ;
+    if (m_quickInitialized && !m_psrRequested) {
+        m_psrRequested = true;
+        QCoreApplication::postEvent(this, new QEvent(UPDATE));
     }
 }
+

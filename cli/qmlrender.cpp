@@ -25,7 +25,7 @@ QmlRender::QmlRender(QString filename, QObject *parent)
     : QObject(parent)
     , m_filename(filename)
 {
-    renderer = std::make_unique<QmlRenderer>(filename);
+    renderer = std::make_unique<QmlRenderer>(filename, 25, 0);
 }
 
 QmlRender::~QmlRender()

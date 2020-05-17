@@ -38,13 +38,21 @@ Render::~Render()
 
 void Render::test_case1()
 {
-    QmlRenderer *m_renderer = new QmlRenderer(refDir + "/test.qml");
-    qDebug()<< refDir + "/test.qml" << " \n " << libDir;
-    QImage img = m_renderer->render(720, 596, QImage::Format_ARGB32);
-    bool ok = img.save(libDir);
+    int fps = 25;
+    int duration = 6;
+    int totalFrames = fps*duration;
+    QmlRenderer *m_renderer = new QmlRenderer("/home/akhilkg/anim.qml", fps, duration);
+    //int total = 25*15;
+    int i;
+    for(i=0; i<totalFrames; i++) {
+        QImage img = m_renderer->render(720, 596, QImage::Format_ARGB32, i);
+        QString number = QString::number(i);
+        bool ok = img.save("/home/akhilkg/out/frame" + number + ".jpg");
+        if(!ok)
+            qDebug() << " NOT OKAY MAN \n";
+    }
 
-    qDebug() << " OK VALUE == " << ok;
-
+    qDebug() << " FINAL VALUES == " << i << " " << totalFrames;
 }
 
 QTEST_MAIN(Render)

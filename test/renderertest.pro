@@ -10,4 +10,5 @@ QT = core testlib qml quick
 CONFIG += depend_includepath testcase
 CONFIG -= app_bundle
 SOURCES +=  tst_render.cpp
+CONFIG += maxwarnings
 HEADERS += tst_render.h

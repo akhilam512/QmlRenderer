@@ -23,98 +23,103 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define QMLRENDERER_H
 
 #include "qmlrenderer_global.h"
-#include "corerenderer.h"
-#include <memory>
+#include "qmlanimationdriver.h"
 
 #include <QObject>
 #include <QSize>
+#include <QImage>
+#include <QQmlComponent>
 #include <QQmlEngine>
+#include <QQuickItem>
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
+#include <QOpenGLFramebufferObject>
+#include <QQuickRenderControl>
+#include <QOffscreenSurface>
+#include <QEvent>
+#include <QtConcurrent/QtConcurrent>
 #include <QQmlError>
 #include <QFuture>
 #include <QQuickWindow>
 #include <QThread>
+#include <QEventLoop>
+#include <QMutex>
+#include <QWaitCondition>
+#include <QtCore/QAnimationDriver>
 
-class QOpenGLContext;
-class QOpenGLFramebufferObject;
-class QOffscreenSurface;
-class QQuickRenderControl;
-class QQmlComponent;
-class QQuickItem;
-class QmlAnimationDriver;
+#include "qmlcorerenderer.h"
 
-class QMLRENDERERSHARED_EXPORT QmlRenderer: public QObject
+typedef int32_t mlt_position;
+
+
+class QmlRenderer: public QObject
 {
-
     Q_OBJECT
 
 public:
-    explicit QmlRenderer(QString qmlFileUrlString, qint64 frameTime=0, qreal devicePixelRatio = 1.0, int durationMs = 1000*5, int fps = 24, QObject *parent = nullptr);
+    explicit QmlRenderer(QString qmlFileUrlString, int fps, int duration, qint64 frameTime=0, qreal devicePixelRatio = 1.0, QObject *parent = nullptr);
+
     ~QmlRenderer() override;
+
     enum renderStatus {
-            NotRunning,
-            Initialised,
-            Running,
-        };
+        NotRunning,
+        Initialised
+    };
 
     QImage render(int width, int height, QImage::Format format);
-
+    QImage render(int width, int height, QImage::Format format, int frame);
 
 private:
+    bool event(QEvent *event) override;
 
-    void init(int width = 1280, int height = 720, QImage::Format image_format = QImage::Format_ARGB32_Premultiplied);
+    void init(int width, int height, QImage::Format imageFormat);
     void loadInput();
-    // bool event(QEvent *event) override;
-    void createFbo();
-    bool loadRootObject();
-    bool checkQmlComponent();
-    QImage renderToQImage();
 
-    void renderNext();
+    void createFbo();
+
+    bool loadRootObject();
+
+    bool checkQmlComponent();
+
+    QImage renderStatic();
+
+    void renderAnimated();
 
     void initialiseContext();
 
-    std::shared_ptr<QOpenGLContext> m_context;
-    std::shared_ptr<QOffscreenSurface> m_offscreenSurface;
-    std::shared_ptr<QQuickRenderControl> m_renderControl;
-    std::shared_ptr<QQuickWindow> m_quickWindow;
-    std::unique_ptr<QQmlEngine> m_qmlEngine;
-    std::unique_ptr<QQmlComponent> m_qmlComponent;
-    std::unique_ptr<QQuickItem> m_rootItem;
-    std::unique_ptr<QOpenGLFramebufferObject> m_fbo;
-    std::unique_ptr<QmlAnimationDriver> m_animationDriver;
-    std::unique_ptr<QObject> m_rootObject;
-    std::unique_ptr<CoreRenderer> m_corerenderer;
+    QOpenGLContext *m_context;
+    QOffscreenSurface *m_offscreenSurface;
+    QQuickRenderControl* m_renderControl;
+    QQuickWindow *m_quickWindow;
+    QQmlEngine *m_qmlEngine;
+    QQmlComponent *m_qmlComponent;
+    QQuickItem *m_rootItem;
+    QOpenGLFramebufferObject *m_fbo;
+    QmlAnimationDriver *m_animationDriver;
+    QmlCoreRenderer *m_corerenderer;
     QThread *m_rendererThread;
+
     qreal m_dpr;
     QSize m_size;
     renderStatus m_status;
-    int m_selectFrame;
-    int m_duration;  // by default = 5 seconds
-    int m_fps; // by default = 24 fps
+    int m_duration;
+    int m_fps;
     int m_framesCount;
-    int m_currentFrame;
-    QString m_outputName;
-    QString m_outputFormat;
-    QString m_outputDirectory;
-    QString m_outputFile;
-    QString m_qmlFileText;
+    mlt_position m_currentFrame;
     QUrl m_qmlFileUrl;
     QImage m_frame;
-    qint64 m_frameTime;
+    mlt_position m_requestedFrame;
     QImage::Format m_ImageFormat;
-    bool renderFlag;
-
-signals:
-    // TODO - implement terminate()
+    QImage m_img;
+    bool m_quickInitialized;
+    bool m_psrRequested;
+    bool m_imageReady;
+    mlt_position m_totalFrames;
 
 private slots:
-    /* @brief Slot activated when handling the QML file returns with warning
-    */
-    void displayQmlError(QList<QQmlError> warnings);
-
-    /* @brief Slot activated when the associated Scene graph returns errors
-    */
-    void displaySceneGraphError(QQuickWindow::SceneGraphError error, const QString &message);
+    void requestUpdate();
+signals:
+    void imageReady();
 };
 
 #endif // QMLRENDERER_H
