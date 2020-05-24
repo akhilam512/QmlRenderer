@@ -209,6 +209,7 @@ bool QmlRenderer::checkQmlComponent()
 QImage QmlRenderer::render(int width, int height, QImage::Format format)
 {
     init(width, height, format);
+    renderStatic();
     return m_img;
 }
 
@@ -220,7 +221,6 @@ void QmlRenderer::renderStatic()
 
 QImage QmlRenderer::render(int width, int height, QImage::Format format, int frame)
 {
-    qDebug() << " COUNT = " << m_framesCount;
     m_requestedFrame = frame;
     m_currentFrame = 0;
 
