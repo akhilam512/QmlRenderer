@@ -33,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 QmlCoreRenderer::QmlCoreRenderer(QObject *parent)
     : QObject(parent),
-    m_quit(false),
     m_fbo(nullptr),
     m_animationDriver(nullptr),
     m_offscreenSurface(nullptr),
@@ -48,70 +47,43 @@ QmlCoreRenderer::~QmlCoreRenderer()
 
 bool QmlCoreRenderer::event(QEvent *e)
 {
-  //  qDebug() << " -------- CoreRenderer event handler -------- ";
-        QMutexLocker lock(&m_mutex);
- //       qDebug() << " Not locked :(";
-        switch (int(e->type())) {
-            case INIT:
-                init();
-                return true;
-            case RENDER:
-   //         qDebug() << " RENDER event";
-                render(&lock);
-                return true;
-            case RESIZE:
-                // TODO
-                return true;
-            case STOP:
-                cleanup();
-                return true;
-            default:
-                return QObject::event(e);
-        }
-}
-
-QImage QmlCoreRenderer::asyncRender()
-{
-        Q_ASSERT(QThread::currentThread() != this->thread());
-
-//    qDebug() << " ----------- asynceRender() -------------";
-    bool ok = m_mutex.tryLock();
-//    qDebug() << "lock try == " << ok;
     QMutexLocker lock(&m_mutex);
- //   qDebug() << " Locked!!!! ";
-    render(&lock);
-    return m_image;
-}
-
-void QmlCoreRenderer::aboutToQuit()
-{
-    QMutexLocker lock(&m_quitMutex);
-    m_quit = true;
+    switch (int(e->type())) {
+        case INIT:
+            init();
+            return true;
+        case RENDER:
+            render(&lock);
+            return true;
+        case RESIZE:
+            // TODO
+            return true;
+        case STOP:
+            cleanup();
+            return true;
+        default:
+            return QObject::event(e);
+    }
 }
 
 void QmlCoreRenderer::init()
-    {
-   //     qDebug() << " COULD BE FROM INIT!!!!";
-        m_context->makeCurrent(m_offscreenSurface);
-        m_renderControl->initialize(m_context);
-        m_animationDriver->install();
-        qDebug() << " CORE RENDERER ELAPSED = " << m_animationDriver->elapsed();
-    }
+{
+    m_context->makeCurrent(m_offscreenSurface);
+    m_renderControl->initialize(m_context);
+}
 
 void QmlCoreRenderer::cleanup()
-    {
-        m_context->makeCurrent(m_offscreenSurface);
-        m_renderControl->invalidate();
-        delete m_fbo;
-        m_fbo = nullptr;
+{
+    m_context->makeCurrent(m_offscreenSurface);
+    m_renderControl->invalidate();
+    delete m_fbo;
+    m_fbo = nullptr;
+    m_context->doneCurrent();
 
-        m_context->doneCurrent();
-
-        m_animationDriver->uninstall();
-
-        m_context->moveToThread(QCoreApplication::instance()->thread());
-        m_cond.wakeOne();
-    }
+    m_animationDriver->uninstall();
+    m_context->moveToThread(QCoreApplication::instance()->thread());
+    m_cond.wakeOne();
+}
 
 void QmlCoreRenderer::ensureFbo()
 {
@@ -131,29 +103,24 @@ void QmlCoreRenderer::ensureFbo()
 }
 
 void QmlCoreRenderer::render(QMutexLocker *lock)
-    {
-      //  qDebug() << " ----------- render(lock) -------- ";
-    //	Q_ASSERT(QThread::currentThread() != this->thread());
-        if (!m_context->makeCurrent(m_offscreenSurface)) {
-            qWarning("!!!!! ERROR : Failed to make context current on render thread");
-            return;
-        }
+{
+    if (!m_context->makeCurrent(m_offscreenSurface)) {
+        qWarning("!!!!! ERROR : Failed to make context current on render thread");
+        return;
+    }
 
-        ensureFbo();
+    ensureFbo();
+    m_renderControl->sync();
 
-        // Synchronization and rendering happens here on the render thread
-        m_renderControl->sync();
-        // Meanwhile on this thread continue with the actual rendering (into the FBO first).
-        m_renderControl->render();
-        m_context->functions()->glFlush();
+    // NOTE: normally, in a gui application, the main thread would not be blocked whilst rendering takes place
+    // The main thread, here,  must wait untill the rendering is done because we only care about the final rendered result
 
-        m_image = m_fbo->toImage();
-        m_image.convertTo(m_format);
-        qDebug() << " CORE RENDERER ELAPSED = " << m_animationDriver->elapsed();
+    m_renderControl->render();
+    m_context->functions()->glFlush();
 
-        m_cond.wakeOne();
-        lock->unlock();
-        // The main thread can now continue
-        // NOTE: the main thread should ideally be not blocked while rendering but since we are not doing anything intensive on the main thread, we can afford to do it
+    m_image = m_fbo->toImage();
+    m_image.convertTo(m_format);
 
+    m_cond.wakeOne();
+    lock->unlock();
 }

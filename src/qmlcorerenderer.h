@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef QMLCORERENDERER_H
 #define QMLCORERENDERER_H
 
-#include<qmlanimationdriver.h>
+#include <qmlanimationdriver.h>
 #include <QObject>
 #include <QSize>
 #include <QImage>
@@ -55,60 +55,46 @@ class QmlCoreRenderer : public QObject
 {
 public:
     explicit QmlCoreRenderer(QObject *parent = nullptr);
-
     ~QmlCoreRenderer() override;
 
     void requestInit() { QCoreApplication::postEvent(this, new QEvent(INIT)); }
     void requestRender() { QCoreApplication::postEvent(this, new QEvent(RENDER)); }
     void requestResize() { QCoreApplication::postEvent(this, new QEvent(RESIZE)); }
     void requestStop() { QCoreApplication::postEvent(this, new QEvent(STOP)); }
-    QWaitCondition *cond() { return &m_cond; }
-    QMutex *mutex() { return &m_mutex; }
-
     void setContext(QOpenGLContext *context) { m_context = context; }
     void setSurface(QOffscreenSurface *surface) { m_offscreenSurface = surface; }
     void setQuickWindow(QQuickWindow *window) { m_quickWindow = window; }
     void setRenderControl(QQuickRenderControl* control) { m_renderControl = control; }
     void setAnimationDriver(QmlAnimationDriver* driver) { m_animationDriver = driver; }
-
     void setSize(QSize s) { m_size = s; }
     void setDPR(qreal value) { m_dpr = value; }
     void setFPS(int value) { m_fps = value;}
     void setFormat( QImage::Format f) { m_format = f; }
-
+    void checkifAnimDriverRunning() { m_animationDriver->isRunning()? qDebug() << " 1 driver running": qDebug() << "2  driver is NOT running :)"; }
+    QWaitCondition *cond() { return &m_cond; }
+    QMutex *mutex() { return &m_mutex; }
     QImage getRenderedQImage() { return m_image; }
-
-    QImage asyncRender();
-    void init();
 
 private:
     bool event(QEvent *e) override;
-
-    void aboutToQuit();
-
-
     void cleanup();
-
+    void init();
     void ensureFbo();
-
     void render(QMutexLocker *lock);
 
     QWaitCondition m_cond;
     QMutex m_mutex;
-
     QOpenGLContext* m_context;
     QOffscreenSurface* m_offscreenSurface;
     QQuickRenderControl* m_renderControl;
     QQuickWindow* m_quickWindow;
     QOpenGLFramebufferObject* m_fbo;
     QmlAnimationDriver* m_animationDriver;
-
     QImage::Format m_format;
     QSize m_size;
     qreal m_dpr;
     QMutex m_quitMutex;
     int m_fps;
-    bool m_quit;
     QImage m_image;
 };
 

@@ -21,18 +21,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef QMLANIMATIONDRIVER_H
 #define QMLANIMATIONDRIVER_H
-#include <QObject>
 #include <QtCore/QAnimationDriver>
 
 class QmlAnimationDriver : public QAnimationDriver
 {
-    Q_OBJECT
 public:
     QmlAnimationDriver(int msPerStep);
 
     void advance() override;
     qint64 elapsed() const override;
-    void advance(qint64 msFrameTime);
 private:
     int m_step;
     qint64 m_elapsed;

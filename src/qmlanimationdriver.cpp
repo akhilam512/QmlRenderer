@@ -19,8 +19,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <QImage>
-#include <QDebug>
 #include "qmlanimationdriver.h"
 
 QmlAnimationDriver::QmlAnimationDriver(int msPerStep)
@@ -28,7 +26,6 @@ QmlAnimationDriver::QmlAnimationDriver(int msPerStep)
     , m_elapsed(0)
 {
 }
-
 
 void QmlAnimationDriver::advance()
 {
@@ -39,17 +36,5 @@ void QmlAnimationDriver::advance()
 qint64 QmlAnimationDriver::elapsed() const
 {
     return m_elapsed;
-}
-
-void QmlAnimationDriver::advance(qint64 msFrameTime) // NOT IN USE : approach not working
-{
-    if(QmlAnimationDriver::isRunning()) {
-        qDebug() << "QmlAnimationDriver already running";
-        return;
-    }
-    m_elapsed = 0;
-    while(m_elapsed < msFrameTime) {
-        QmlAnimationDriver::advance();
-    }
 }
 

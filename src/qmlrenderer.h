@@ -43,8 +43,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <QQuickWindow>
 #include <QThread>
 #include <QEventLoop>
-#include <QMutex>
-#include <QWaitCondition>
 #include <QtCore/QAnimationDriver>
 
 #include "qmlcorerenderer.h"
@@ -57,7 +55,7 @@ class QmlRenderer: public QObject
     Q_OBJECT
 
 public:
-    explicit QmlRenderer(QString qmlFileUrlString, int fps, int duration, qint64 frameTime=0, qreal devicePixelRatio = 1.0, QObject *parent = nullptr);
+    explicit QmlRenderer(QString qmlFileUrlString, int fps, int duration, QObject *parent = nullptr);
 
     ~QmlRenderer() override;
 
@@ -68,24 +66,22 @@ public:
 
     QImage render(int width, int height, QImage::Format format);
     QImage render(int width, int height, QImage::Format format, int frame);
+    void checkCurrentContex() {    m_context->currentContext() == nullptr? qDebug() << "1 Context is Null ": qDebug() << "2 A context was made current!"; }
+    void checkifAnimDriverRunning() { m_animationDriver->isRunning()? qDebug() << " 1 driver running": qDebug() << "2  driver is NOT running :)"; }
+
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
-    bool event(QEvent *event) override;
-
+    void initDriver();
+    void resetDriver();
     void init(int width, int height, QImage::Format imageFormat);
     void loadInput();
-
-    void createFbo();
-
+    void polishSyncRender();
     bool loadRootObject();
-
     bool checkQmlComponent();
-
-    QImage renderStatic();
-
+    void renderStatic();
     void renderAnimated();
-
-    void initialiseContext();
 
     QOpenGLContext *m_context;
     QOffscreenSurface *m_offscreenSurface;
@@ -111,13 +107,10 @@ private:
     mlt_position m_requestedFrame;
     QImage::Format m_ImageFormat;
     QImage m_img;
-    bool m_quickInitialized;
-    bool m_psrRequested;
-    bool m_imageReady;
     mlt_position m_totalFrames;
+    QWaitCondition m_cond;
+    QMutex m_mutex;
 
-private slots:
-    void requestUpdate();
 signals:
     void imageReady();
 };
