@@ -39,20 +39,47 @@ Render::~Render()
 void Render::test_case1()
 {
     int fps = 25;
-    int duration = 6;
+    int duration = 3;
     int totalFrames = fps*duration;
-    QmlRenderer *m_renderer = new QmlRenderer("/home/akhilkg/anim.qml", fps, duration);
+    QmlRenderer *m_renderer = new QmlRenderer("/home/akhilkg/qml-examples/path-anim.qml", fps, duration);
     //int total = 25*15;
-    int i;
-    for(i=0; i<totalFrames; i++) {
-        QImage img = m_renderer->render(720, 596, QImage::Format_ARGB32, i);
-        QString number = QString::number(i);
-        bool ok = img.save("/home/akhilkg/out/frame" + number + ".jpg");
-        if(!ok)
-            qDebug() << " NOT OKAY MAN \n";
-    }
 
-    qDebug() << " FINAL VALUES == " << i << " " << totalFrames;
+ //   QProcess::execute("rm /home/akhilkg/out/frame*");
+
+   // for(int i=0; i<totalFrames; i++) {
+
+    int i = 0;
+    QImage img = m_renderer->render(720, 596, QImage::Format_ARGB32, i);
+    img.save("/home/akhilkg/out/TESTSPLEASE" + QString::number(i) + ".jpg");
+
+    i = 40;
+    img = m_renderer->render(720, 596, QImage::Format_ARGB32, i);
+    img.save("/home/akhilkg/out/TESTSPLEASE" + QString::number(i) + ".jpg");
+
+
+    i = 74;
+    img = m_renderer->render(720, 596, QImage::Format_ARGB32, i);
+    img.save("/home/akhilkg/out/TESTSPLEASE" + QString::number(i) + ".jpg");
+
+//    i = 150;
+//    img = m_renderer->render(720, 596, QImage::Format_ARGB32, i);
+//    img.save("/home/akhilkg/out/TESTSPLEASE" + QString::number(i) + ".jpg");
+//    i = 151;
+//    img = m_renderer->render(720, 596, QImage::Format_ARGB32, i);
+//    img.save("/home/akhilkg/out/TESTSPLEASE" + QString::number(i) + ".jpg");
+
+
+    //}
+//    int i;
+//    for(i=0; i<totalFrames; i++) {
+//        QImage img = m_renderer->testRender(720, 596, QImage::Format_ARGB32, i);
+//        QString number = QString::number(i);
+//        bool ok = img.save("/home/akhilkg/out/frame" + number + ".jpg");
+//        if(!ok)
+//            qDebug() << " NOT OKAY MAN \n";
+//    }
+
+//    qDebug() << " FINAL VALUES == " << i << " " << totalFrames;
 }
 
 QTEST_MAIN(Render)
