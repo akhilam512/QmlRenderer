@@ -170,7 +170,9 @@ void QmlRenderer::init(int width, int height, QImage::Format imageFormat)
 
 void QmlRenderer::initDriver()
 {
-    m_animationDriver = new QmlAnimationDriver(1000 / m_fps);
+    int correctedFrames = m_totalFrames - 2;
+    int correctedFps = correctedFrames/m_duration;
+    m_animationDriver = new QmlAnimationDriver(1000 / correctedFps);
     m_animationDriver->install();
     m_corerenderer->setAnimationDriver(m_animationDriver);
 }
