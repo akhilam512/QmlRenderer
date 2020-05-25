@@ -21,6 +21,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "qmlrenderer.h"
 #include <QEvent>
 
+/*
+ * The QmlRenderer class renders a given QML file using QQuickRenderControl
+ * onto a QOpenGlFrameBufferObject which can then be saved to create an
+ * QImage.
+ *
+ * The rendering is done by the QmlCoreRenderer class, which does all of
+ * its functions (syncing, rendering) on a separate thread dedicated for rendering.
+ * The QOpenGLContext and QQuickRenderControl live on the render thread. Syncing,
+ * rendering and related gl functions are called from the render thread, while
+ * polishing is done on the main thread.
+ *
+ * Note that the aim of a separate thread for rendering is not to improve
+ * performance but to ensure that there is no clash between OpenGL contexts
+ * of this renderer with the OpenGL context of the application that is using
+ * the renderer, which would be living on the same thread otherwise. This can
+ * lead to crashes when one context tries to call makeCurrent() while living being on
+ * the same thread another context lives in.
+ *
+ * The renderer uses it's own custom QAnimationDriver class to advance QML animations
+ * at a given frame rate.
+*/
+
 QmlRenderer::QmlRenderer(QString qmlFileUrlString, int fps, int duration, QObject *parent)
     : QObject(parent)
     , m_fbo(nullptr)
