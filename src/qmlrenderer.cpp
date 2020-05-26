@@ -170,8 +170,31 @@ void QmlRenderer::init(int width, int height, QImage::Format imageFormat)
 
 void QmlRenderer::initDriver()
 {
-    int correctedFrames = m_totalFrames - 2;
-    int correctedFps = correctedFrames/m_duration;
+    /*
+    We use a corrected FPS because animations take more frames
+    than expected due to a weird behaviour of the custom QAnimation
+    Driver. For different timesteps the animations lag by a certain
+    amount of frames, values for which were investigated for different
+    values of fps's. The cause of this bug remains unknown for the time
+    being but it is probably an upstream one.
+    */
+    int correctedFps = m_fps;
+    if (m_fps < 40) {
+        correctedFps -= 1;
+    }
+    else if (m_fps <= 60) {
+        correctedFps -= 2;
+    }
+    else if (m_fps <= 69) {
+        correctedFps -= 3;
+    }
+    else if (m_fps <= 80) {
+        correctedFps -= 4;
+    }
+    else {
+        correctedFps -= 5;
+    }
+
     m_animationDriver = new QmlAnimationDriver(1000 / correctedFps);
     m_animationDriver->install();
     m_corerenderer->setAnimationDriver(m_animationDriver);
